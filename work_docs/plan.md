@@ -127,53 +127,53 @@ DrSumMcpServer.java
 ### 【実装TODO】
 
 #### Phase 1: 基盤整備（リファクタリング）
-- [ ] 1.1 現在のDrSumMcpServerクラスをSOLID原則に基づきリファクタリング
-  - [ ] 既存のsummarizeツールを残したまま、新規クラス構造を追加
-  - [ ] テスト容易性を考慮した設計
+- [x] 1.1 現在のDrSumMcpServerクラスをSOLID原則に基づきリファクタリング
+  - [x] 既存のsummarizeツールを残したまま、新規クラス構造を追加
+  - [x] テスト容易性を考慮した設計
 
 #### Phase 2: Dr.Sum接続機能実装
-- [ ] 2.1 ConnectionConfigクラスの実装
-  - [ ] フィールド：host, port, username, password, database
-  - [ ] バリデーション機能
-  - [ ] パスワードの秘匿化（ログ出力時）
+- [x] 2.1 ConnectionConfigクラスの実装
+  - [x] フィールド：host, port, username, password, database
+  - [x] バリデーション機能
+  - [x] パスワードの秘匿化（ログ出力時）
   
-- [ ] 2.2 DrSumConnectionクラスの実装
-  - [ ] DrSumEA.jarを使用した接続機能
-  - [ ] connect()メソッド
-  - [ ] disconnect()メソッド
-  - [ ] isConnected()メソッド
-  - [ ] 接続プーリングは不要（シンプルに）
+- [x] 2.2 DrSumConnectionクラスの実装
+  - [x] DrSumEA.jarを使用した接続機能
+  - [x] connect()メソッド
+  - [x] disconnect()メソッド
+  - [x] isConnected()メソッド
+  - [x] 接続プーリングは不要（シンプルに）
   
-- [ ] 2.3 configure_connectionツールの実装
-  - [ ] ツール定義追加
-  - [ ] リクエストハンドラー実装
-  - [ ] エラーハンドリング
+- [x] 2.3 configure_connectionツールの実装
+  - [x] ツール定義追加
+  - [x] リクエストハンドラー実装
+  - [x] エラーハンドリング
 
-- [ ] 2.4 disconnectツールの実装
-  - [ ] ツール定義追加
-  - [ ] リクエストハンドラー実装
+- [x] 2.4 disconnectツールの実装
+  - [x] ツール定義追加
+  - [x] リクエストハンドラー実装
 
 #### Phase 3: メタ情報取得機能実装
-- [ ] 3.1 DrSumMetadataServiceクラスの実装
-  - [ ] getTableMetadata()メソッド
-  - [ ] getSampleData()メソッド（デフォルト3行）
-  - [ ] SAMPLE_ROWS定数定義
+- [x] 3.1 DrSumMetadataServiceクラスの実装
+  - [x] getTableMetadata()メソッド
+  - [x] getSampleData()メソッド（デフォルト3行）
+  - [x] SAMPLE_ROWS定数定義
   
-- [ ] 3.2 get_metadataツールの実装
-  - [ ] ツール定義追加（table_name, sample_rows）
-  - [ ] リクエストハンドラー実装
-  - [ ] メタ情報とサンプルデータの整形（JSON）
+- [x] 3.2 get_metadataツールの実装
+  - [x] ツール定義追加（table_name, sample_rows）
+  - [x] リクエストハンドラー実装
+  - [x] メタ情報とサンプルデータの整形（JSON）
 
 #### Phase 4: クエリー実行機能実装
-- [ ] 4.1 DrSumQueryServiceクラスの実装
-  - [ ] executeQuery()メソッド
-  - [ ] 結果セットの整形
-  - [ ] SQLインジェクション対策検討
+- [x] 4.1 DrSumQueryServiceクラスの実装
+  - [x] executeQuery()メソッド
+  - [x] 結果セットの整形
+  - [x] SQLインジェクション対策検討
   
-- [ ] 4.2 execute_queryツールの実装
-  - [ ] ツール定義追加（sql_query）
-  - [ ] リクエストハンドラー実装
-  - [ ] エラーハンドリング
+- [x] 4.2 execute_queryツールの実装
+  - [x] ツール定義追加（sql_query）
+  - [x] リクエストハンドラー実装
+  - [x] エラーハンドリング
 
 #### Phase 5: テスト実装
 - [ ] 5.1 DrSumConnectionのUnit test

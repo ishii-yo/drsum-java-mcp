@@ -20,7 +20,7 @@ import java.util.Map;
  * Main class for the DrSum MCP Server.
  * 
  * This server implements the Model Context Protocol (MCP) to provide
- * Dr.Sum database analysis capabilities and document summarization to AI assistants and applications.
+ * Dr.Sum database analysis capabilities to AI assistants and applications.
  */
 public class DrSumMcpServer {
     
@@ -51,7 +51,7 @@ public class DrSumMcpServer {
             var server = McpServer.sync(transportProvider)
                     .serverInfo(serverInfo)
                     .capabilities(capabilities)
-                    .instructions("DrSum MCP Server provides Dr.Sum database analysis and document summarization capabilities. " +
+                    .instructions("DrSum MCP Server provides Dr.Sum database analysis capabilities. " +
                                 "Use 'configure_connection' to connect to Dr.Sum, " +
                                 "'get_metadata' to retrieve table information, " +
                                 "'execute_query' to run SQL queries, " +
@@ -59,11 +59,6 @@ public class DrSumMcpServer {
                     .build();
             
             // Register tools using the builder pattern (non-deprecated API)
-            server.addTool(McpServerFeatures.SyncToolSpecification.builder()
-                    .tool(createSummarizeTool())
-                    .callHandler(DrSumMcpServer::handleSummarizeRequest)
-                    .build());
-            
             server.addTool(McpServerFeatures.SyncToolSpecification.builder()
                     .tool(createConfigureConnectionTool())
                     .callHandler(DrSumMcpServer::handleConfigureConnectionRequest)
@@ -99,16 +94,6 @@ public class DrSumMcpServer {
             logger.error("Failed to start DrSum MCP Server", e);
             System.exit(1);
         }
-    }
-    
-    /**
-     * Creates the summarize tool definition.
-     */
-    private static McpSchema.Tool createSummarizeTool() {
-        return McpSchema.Tool.builder()
-                .name("summarize")
-                .description("Summarizes the provided text content")
-                .build();
     }
     
     /**
@@ -154,42 +139,6 @@ public class DrSumMcpServer {
                 .description("Execute a SQL query on Dr.Sum database. " +
                            "Parameters: sql_query (string, required)")
                 .build();
-    }
-    
-    /**
-     * Handles summarize tool requests.
-     */
-    private static McpSchema.CallToolResult handleSummarizeRequest(
-            McpSyncServerExchange exchange, 
-            McpSchema.CallToolRequest request) {
-        
-        try {
-            logger.info("Processing summarize request");
-            
-            // Extract parameters from request
-            Map<String, Object> arguments = request.arguments();
-            String text = (String) arguments.get("text");
-            Integer maxSentences = arguments.containsKey("max_sentences") 
-                    ? ((Number) arguments.get("max_sentences")).intValue() 
-                    : 3;
-            
-            if (text == null || text.trim().isEmpty()) {
-                return createErrorResult("Text parameter is required and cannot be empty");
-            }
-            
-            // Perform summarization
-            String summary = summarizeText(text, maxSentences);
-            
-            // Create successful response
-            McpSchema.TextContent content = new McpSchema.TextContent(summary);
-            
-            logger.info("Successfully processed summarize request");
-            return McpSchema.CallToolResult.builder().content(List.of(content)).build();
-            
-        } catch (Exception e) {
-            logger.error("Error processing summarize request", e);
-            return createErrorResult("Internal error: " + e.getMessage());
-        }
     }
     
     /**
@@ -383,36 +332,6 @@ public class DrSumMcpServer {
             logger.error("Error processing execute_query request", e);
             return createErrorResult("Internal error: " + e.getMessage());
         }
-    }
-    
-    /**
-     * Simple text summarization logic.
-     * In a real implementation, this would use advanced NLP techniques or AI models.
-     */
-    private static String summarizeText(String text, int maxSentences) {
-        // Simple sentence-based summarization
-        String[] sentences = text.split("[.!?]+");
-        
-        if (sentences.length <= maxSentences) {
-            return text.trim();
-        }
-        
-        // Take the first maxSentences sentences as a simple summary
-        StringBuilder summary = new StringBuilder();
-        for (int i = 0; i < Math.min(maxSentences, sentences.length); i++) {
-            String sentence = sentences[i].trim();
-            if (!sentence.isEmpty()) {
-                summary.append(sentence);
-                if (!sentence.endsWith(".") && !sentence.endsWith("!") && !sentence.endsWith("?")) {
-                    summary.append(".");
-                }
-                if (i < maxSentences - 1) {
-                    summary.append(" ");
-                }
-            }
-        }
-        
-        return summary.toString();
     }
     
     /**

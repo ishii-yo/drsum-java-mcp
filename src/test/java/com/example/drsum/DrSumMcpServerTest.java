@@ -269,6 +269,51 @@ class DrSumMcpServerTest {
     }
 
     // ========================================================================
+    // DrSumQueryService Tests
+    // ========================================================================
+
+    @Test
+    @DisplayName("DrSumQueryService should throw exception with null connection")
+    void testQueryService_NullConnection() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.DrSumQueryService(null);
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumQueryService should throw exception when not connected")
+    void testQueryService_NotConnected() {
+        DrSumMcpServer.DrSumQueryService service = 
+            new DrSumMcpServer.DrSumQueryService(connection);
+        
+        assertThrows(IllegalStateException.class, () -> {
+            service.executeQuery("SELECT * FROM test");
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumQueryService should throw exception for null SQL")
+    void testQueryService_NullSQL() {
+        DrSumMcpServer.DrSumQueryService service = 
+            new DrSumMcpServer.DrSumQueryService(connection);
+        
+        assertThrows(IllegalArgumentException.class, () -> {
+            service.executeQuery(null);
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumQueryService should throw exception for empty SQL")
+    void testQueryService_EmptySQL() {
+        DrSumMcpServer.DrSumQueryService service = 
+            new DrSumMcpServer.DrSumQueryService(connection);
+        
+        assertThrows(IllegalArgumentException.class, () -> {
+            service.executeQuery("");
+        });
+    }
+
+    // ========================================================================
     // Summarize Tool Tests (Legacy)
     // ========================================================================
 

@@ -52,6 +52,7 @@ public class DrSumMcpServer {
             McpSchema.Tool configureConnectionTool = createConfigureConnectionTool();
             McpSchema.Tool disconnectTool = createDisconnectTool();
             McpSchema.Tool getMetadataTool = createGetMetadataTool();
+            McpSchema.Tool executeQueryTool = createExecuteQueryTool();
             
             // Create tool specifications
             McpServerFeatures.SyncToolSpecification summarizeSpec = 
@@ -78,6 +79,12 @@ public class DrSumMcpServer {
                             DrSumMcpServer::handleGetMetadataRequest
                     );
             
+            McpServerFeatures.SyncToolSpecification executeQuerySpec = 
+                    new McpServerFeatures.SyncToolSpecification(
+                            executeQueryTool,
+                            DrSumMcpServer::handleExecuteQueryRequest
+                    );
+            
             // Build and start the server
             var server = McpServer.sync(transportProvider)
                     .serverInfo(serverInfo)
@@ -87,7 +94,7 @@ public class DrSumMcpServer {
                                 "'get_metadata' to retrieve table information, " +
                                 "'execute_query' to run SQL queries, " +
                                 "and 'disconnect' to close the connection.")
-                    .tools(List.of(summarizeSpec, configureConnectionSpec, disconnectSpec, getMetadataSpec))
+                    .tools(List.of(summarizeSpec, configureConnectionSpec, disconnectSpec, getMetadataSpec, executeQuerySpec))
                     .build();
             
             logger.info("DrSum MCP Server started successfully");
@@ -148,6 +155,17 @@ public class DrSumMcpServer {
                 .description("Get table metadata with sample data from Dr.Sum. " +
                            "Parameters: table_name (string, required), " +
                            "sample_rows (integer, optional, default=3)")
+                .build();
+    }
+    
+    /**
+     * Creates the execute_query tool definition.
+     */
+    private static McpSchema.Tool createExecuteQueryTool() {
+        return McpSchema.Tool.builder()
+                .name("execute_query")
+                .description("Execute a SQL query on Dr.Sum database. " +
+                           "Parameters: sql_query (string, required)")
                 .build();
     }
     
@@ -327,6 +345,51 @@ public class DrSumMcpServer {
             return createErrorResult(e.getMessage());
         } catch (Exception e) {
             logger.error("Error processing get_metadata request", e);
+            return createErrorResult("Internal error: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * Handles execute_query tool requests.
+     */
+    private static McpSchema.CallToolResult handleExecuteQueryRequest(
+            McpSyncServerExchange exchange, 
+            Map<String, Object> arguments) {
+        
+        try {
+            logger.info("Processing execute_query request");
+            
+            // Check connection
+            if (!drSumConnection.isConnected()) {
+                return createErrorResult("Not connected to Dr.Sum server. Please configure connection first.");
+            }
+            
+            // Extract parameters
+            String sqlQuery = (String) arguments.get("sql_query");
+            
+            // Validate parameters
+            if (sqlQuery == null || sqlQuery.trim().isEmpty()) {
+                return createErrorResult("sql_query parameter is required");
+            }
+            
+            // Create query service and execute query
+            DrSumQueryService queryService = new DrSumQueryService(drSumConnection);
+            String results = queryService.executeQuery(sqlQuery);
+            
+            // Create success response
+            McpSchema.TextContent content = new McpSchema.TextContent(results);
+            
+            logger.info("Successfully processed execute_query request");
+            return McpSchema.CallToolResult.builder().content(List.of(content)).build();
+            
+        } catch (DWException e) {
+            logger.error("Dr.Sum query execution error: {}", e.getMessage());
+            return createErrorResult("Failed to execute query: " + e.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("Invalid request: {}", e.getMessage());
+            return createErrorResult(e.getMessage());
+        } catch (Exception e) {
+            logger.error("Error processing execute_query request", e);
             return createErrorResult("Internal error: " + e.getMessage());
         }
     }
@@ -526,6 +589,139 @@ public class DrSumMcpServer {
          */
         public ConnectionConfig getConfig() {
             return config;
+        }
+    }
+    
+    // ========================================================================
+    // Inner Classes - Dr.Sum Query Service
+    // ========================================================================
+    
+    /**
+     * Dr.Sum query service.
+     * Executes SQL queries and returns results.
+     */
+    static class DrSumQueryService {
+        private final DrSumConnection dsConnection;
+        
+        public DrSumQueryService(DrSumConnection connection) {
+            if (connection == null) {
+                throw new IllegalArgumentException("DrSumConnection cannot be null");
+            }
+            this.dsConnection = connection;
+        }
+        
+        /**
+         * Executes a SQL query.
+         * 
+         * @param sql SQL query string
+         * @return Query results as JSON string
+         * @throws DWException If query execution fails
+         * @throws IllegalStateException If not connected
+         */
+        public String executeQuery(String sql) throws DWException {
+            // Validate parameters first
+            if (sql == null || sql.trim().isEmpty()) {
+                throw new IllegalArgumentException("SQL query cannot be null or empty");
+            }
+            
+            // Check connection
+            if (!dsConnection.isConnected()) {
+                throw new IllegalStateException("Not connected to Dr.Sum. Please configure connection first.");
+            }
+            
+            logger.info("Executing SQL query: {}", sql.substring(0, Math.min(sql.length(), 100)));
+            
+            jp.co.dw_sapporo.drsum_ea.dbi.DWDbiConnection conn = dsConnection.getConnection();
+            jp.co.dw_sapporo.drsum_ea.dbi.DWDbiCursor cursor = conn.cursor();
+            
+            try {
+                // Execute query
+                cursor.execute(sql);
+                
+                // Get schema
+                jp.co.dw_sapporo.drsum_ea.DWColumnInfo[] schema = cursor.m_oDescription;
+                
+                // Fetch all results (be careful with large result sets)
+                java.util.Vector<java.util.Vector<String>> results = cursor.fetchall();
+                
+                // Format as JSON
+                return formatQueryResultsAsJson(schema, results);
+                
+            } catch (DWException e) {
+                logger.error("Failed to execute query: {}", e.getMessage());
+                throw e;
+            } finally {
+                cursor.close();
+            }
+        }
+        
+        /**
+         * Formats query results as JSON.
+         */
+        private String formatQueryResultsAsJson(jp.co.dw_sapporo.drsum_ea.DWColumnInfo[] schema,
+                                               java.util.Vector<java.util.Vector<String>> results) {
+            StringBuilder json = new StringBuilder();
+            json.append("{\n");
+            
+            // Format column information
+            json.append("  \"columns\": [\n");
+            for (int i = 0; i < schema.length; i++) {
+                jp.co.dw_sapporo.drsum_ea.DWColumnInfo col = schema[i];
+                json.append("    {");
+                json.append("\"name\": \"").append(escapeJson(col.m_sName)).append("\", ");
+                json.append("\"display_name\": \"").append(escapeJson(col.m_sDisplay)).append("\", ");
+                json.append("\"type\": ").append(col.m_iType);
+                json.append("}");
+                if (i < schema.length - 1) {
+                    json.append(",");
+                }
+                json.append("\n");
+            }
+            json.append("  ],\n");
+            
+            // Format result data
+            json.append("  \"rows\": [\n");
+            if (results != null) {
+                for (int i = 0; i < results.size(); i++) {
+                    java.util.Vector<String> row = results.get(i);
+                    json.append("    [");
+                    for (int j = 0; j < row.size(); j++) {
+                        String value = row.get(j);
+                        if (value == null) {
+                            json.append("null");
+                        } else {
+                            json.append("\"").append(escapeJson(value)).append("\"");
+                        }
+                        if (j < row.size() - 1) {
+                            json.append(", ");
+                        }
+                    }
+                    json.append("]");
+                    if (i < results.size() - 1) {
+                        json.append(",");
+                    }
+                    json.append("\n");
+                }
+            }
+            json.append("  ],\n");
+            json.append("  \"row_count\": ").append(results != null ? results.size() : 0).append("\n");
+            json.append("}");
+            
+            return json.toString();
+        }
+        
+        /**
+         * Escapes special characters for JSON.
+         */
+        private String escapeJson(String value) {
+            if (value == null) {
+                return "";
+            }
+            return value.replace("\\", "\\\\")
+                       .replace("\"", "\\\"")
+                       .replace("\n", "\\n")
+                       .replace("\r", "\\r")
+                       .replace("\t", "\\t");
         }
     }
     

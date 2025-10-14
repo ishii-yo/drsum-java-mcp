@@ -1,16 +1,23 @@
 # DrSum Java MCP Server
 
-このプロジェクトは、[Model Context Protocol (MCP)](https://modelcontextprotocol.org/) Java SDKを使用して構築された、ドキュメント要約機能を提供するMCPサーバーです。
+このプロジェクトは、[Model Context Protocol (MCP)](https://modelcontextprotocol.org/) Java SDKを使用して構築された、**Dr.Sumデータベース分析機能**を提供するMCPサーバーです。
 
 ## 概要
 
-DrSum MCP Serverは、AIアシスタントやアプリケーションにテキスト要約機能を提供するMCPサーバー実装です。MCPを通じて、クライアントは文書の要約を依頼できます。
+DrSum MCP Serverは、AIアシスタント（Claude Desktopなど）やアプリケーションに、Dr.Sumデータベースへの接続・分析機能を提供します。LLMがDr.Sumのデータを直接分析できるようになり、自然言語でのデータクエリや分析が可能になります。
 
-## 機能
+## 主な機能
 
-- **テキスト要約**: 長いテキストを指定された文数に要約
+### Dr.Sum分析機能
+- **データベース接続管理**: Dr.Sumサーバーへの接続・切断
+- **メタ情報取得**: テーブル構造とサンプルデータの取得（デフォルト3行）
+- **SQLクエリー実行**: 任意のSQLクエリを実行し、結果をJSON形式で取得
+
+### その他の機能
+- **テキスト要約**: 長いテキストを指定された文数に要約（サンプル機能）
 - **MCP標準準拠**: Model Context Protocolの仕様に準拠
 - **STDIO通信**: 標準入出力を使用した通信
+- **セキュリティ**: パスワードの秘匿化
 
 ## 必要条件
 
@@ -19,11 +26,36 @@ DrSum MCP Serverは、AIアシスタントやアプリケーションにテキ�
 
 ## 依存関係
 
-このプロジェクトは以下のMCP Java SDK依存関係を使用しています：
+このプロジェクトは以下の依存関係を使用しています：
 
-- `io.modelcontextprotocol.sdk:mcp` - MCP Java SDK Core
+### MCP Java SDK
+- `io.modelcontextprotocol.sdk:mcp` (0.14.1) - MCP Java SDK Core
 - `io.modelcontextprotocol.sdk:mcp-bom` - 依存関係バージョン管理
 - `io.modelcontextprotocol.sdk:mcp-test` - テスト用ユーティリティ
+
+### Dr.Sum EA ライブラリ
+- `jp.co.dw_sapporo:DrSumEA` (5.7.0) - Dr.Sum Enterprise Analytics API
+  - DBI（Database Interface）機能を使用
+  - ローカルMavenリポジトリにインストールが必要
+
+### その他
+- `org.slf4j:slf4j-api` (2.0.16) - ロギングAPI
+- `ch.qos.logback:logback-classic` (1.4.14) - ロギング実装
+- `org.junit.jupiter:junit-jupiter` (5.10.1) - テストフレームワーク
+
+## DrSumEA.jarのインストール
+
+Dr.Sum接続機能を使用するには、DrSumEA.jarをローカルMavenリポジトリにインストールする必要があります：
+
+```powershell
+# Windows (PowerShell)
+.\mvnw.cmd install:install-file "-Dfile=C:\DrSum57\DevKit\java\api\DrSumEA.jar" "-DgroupId=jp.co.dw_sapporo" "-DartifactId=DrSumEA" "-Dversion=5.7.0" "-Dpackaging=jar"
+```
+
+```bash
+# Unix/Linux/macOS
+./mvnw install:install-file -Dfile=/path/to/DrSumEA.jar -DgroupId=jp.co.dw_sapporo -DartifactId=DrSumEA -Dversion=5.7.0 -Dpackaging=jar
+```
 
 ## セットアップ
 
@@ -296,23 +328,102 @@ Unix/Linux/macOS:
 
 ### 利用可能なツール
 
-#### `summarize`
+#### `configure_connection`
+Dr.Sumサーバーへの接続を確立します。
+
+**パラメータ:**
+- `host` (必須): Dr.Sumサーバーのホスト名またはIPアドレス
+- `port` (必須): Dr.Sumサーバーのポート番号
+- `username` (必須): 認証用ユーザー名
+- `password` (オプション): 認証用パスワード（空文字列可）
+- `database` (必須): 接続するデータベース名
+
+**例:**
+```json
+{
+  "tool": "configure_connection",
+  "arguments": {
+    "host": "localhost",
+    "port": 6001,
+    "username": "Administrator",
+    "password": "",
+    "database": "SALES"
+  }
+}
+```
+
+#### `get_metadata`
+テーブルのメタ情報とサンプルデータを取得します。
+
+**パラメータ:**
+- `table_name` (必須): テーブル名
+- `sample_rows` (オプション): サンプルデータの行数（デフォルト: 3）
+
+**レスポンス例:**
+```json
+{
+  "table": "受注ビュー",
+  "columns": [
+    {
+      "name": "年",
+      "display_name": "年",
+      "type": 2,
+      "type_name": "INTEGER",
+      "nullable": false,
+      "precision": 10,
+      "scale": 0
+    },
+    {
+      "name": "価格",
+      "display_name": "価格",
+      "type": 3,
+      "type_name": "DECIMAL",
+      "nullable": true,
+      "precision": 18,
+      "scale": 2
+    }
+  ],
+  "sample_data": [
+    ["2006", "150000.00"],
+    ["2007", "280000.00"],
+    ["2008", "320000.00"]
+  ]
+}
+```
+
+#### `execute_query`
+SQLクエリを実行し、結果を取得します。
+
+**パラメータ:**
+- `sql_query` (必須): 実行するSQLクエリ
+
+**レスポンス例:**
+```json
+{
+  "columns": [
+    {"name": "年", "display_name": "年", "type": 2},
+    {"name": "SUM(価格)", "display_name": "SUM(価格)", "type": 3}
+  ],
+  "rows": [
+    ["2006", "150000.00"],
+    ["2007", "280000.00"],
+    ["2008", "320000.00"]
+  ],
+  "row_count": 3
+}
+```
+
+#### `disconnect`
+Dr.Sumサーバーとの接続を切断します。
+
+**パラメータ:** なし
+
+#### `summarize`（サンプル機能）
 テキスト内容を要約します。
 
 **パラメータ:**
 - `text` (必須): 要約するテキスト内容
 - `max_sentences` (オプション): 要約の最大文数（デフォルト: 3）
-
-**例:**
-```json
-{
-  "tool": "summarize",
-  "arguments": {
-    "text": "これは長いテキストです。複数の文が含まれています。要約が必要です。",
-    "max_sentences": 2
-  }
-}
-```
 
 ## プロジェクト構造
 

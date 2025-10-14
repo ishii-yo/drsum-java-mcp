@@ -314,12 +314,12 @@ class DrSumMcpServerTest {
     }
 
     // ========================================================================
-    // Summarize Tool Tests (Legacy)
+    // Tool Request Tests (New API)
     // ========================================================================
 
     @Test
-    @DisplayName("Summarize tool test framework should work")
-    void testSummarizeTool_BasicFunctionality() {
+    @DisplayName("CallToolRequest should be created with valid arguments")
+    void testCallToolRequest_Creation() {
         String longText = "This is the first sentence of a long document. " +
                          "This is the second sentence with more information. " +
                          "This is the third sentence that continues the text. " +
@@ -334,6 +334,76 @@ class DrSumMcpServerTest {
                 )
         );
         
-        assertTrue(true, "Test framework is working");
+        assertNotNull(request);
+        assertEquals("summarize", request.name());
+        assertNotNull(request.arguments());
+        assertEquals(longText, request.arguments().get("text"));
+        assertEquals(3, request.arguments().get("max_sentences"));
+    }
+
+    @Test
+    @DisplayName("CallToolRequest for configure_connection should contain all required parameters")
+    void testCallToolRequest_ConfigureConnection() {
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                "configure_connection",
+                Map.of(
+                        "host", "localhost",
+                        "port", 6001,
+                        "username", "Administrator",
+                        "password", "",
+                        "database", "SALES"
+                )
+        );
+        
+        assertNotNull(request);
+        assertEquals("configure_connection", request.name());
+        assertEquals("localhost", request.arguments().get("host"));
+        assertEquals(6001, request.arguments().get("port"));
+        assertEquals("Administrator", request.arguments().get("username"));
+        assertEquals("SALES", request.arguments().get("database"));
+    }
+
+    @Test
+    @DisplayName("CallToolRequest for get_metadata should contain table_name")
+    void testCallToolRequest_GetMetadata() {
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                "get_metadata",
+                Map.of(
+                        "table_name", "test_table",
+                        "sample_rows", 5
+                )
+        );
+        
+        assertNotNull(request);
+        assertEquals("get_metadata", request.name());
+        assertEquals("test_table", request.arguments().get("table_name"));
+        assertEquals(5, request.arguments().get("sample_rows"));
+    }
+
+    @Test
+    @DisplayName("CallToolRequest for execute_query should contain sql_query")
+    void testCallToolRequest_ExecuteQuery() {
+        String sql = "SELECT * FROM test_table WHERE id > 100";
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                "execute_query",
+                Map.of("sql_query", sql)
+        );
+        
+        assertNotNull(request);
+        assertEquals("execute_query", request.name());
+        assertEquals(sql, request.arguments().get("sql_query"));
+    }
+
+    @Test
+    @DisplayName("CallToolRequest for disconnect should be created without arguments")
+    void testCallToolRequest_Disconnect() {
+        McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
+                "disconnect",
+                Map.of()
+        );
+        
+        assertNotNull(request);
+        assertEquals("disconnect", request.name());
+        assertTrue(request.arguments().isEmpty());
     }
 }

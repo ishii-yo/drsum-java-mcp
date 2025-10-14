@@ -47,45 +47,7 @@ public class DrSumMcpServer {
                     "1.0.0"
             );
             
-            // Create tools
-            McpSchema.Tool summarizeTool = createSummarizeTool();
-            McpSchema.Tool configureConnectionTool = createConfigureConnectionTool();
-            McpSchema.Tool disconnectTool = createDisconnectTool();
-            McpSchema.Tool getMetadataTool = createGetMetadataTool();
-            McpSchema.Tool executeQueryTool = createExecuteQueryTool();
-            
-            // Create tool specifications
-            McpServerFeatures.SyncToolSpecification summarizeSpec = 
-                    new McpServerFeatures.SyncToolSpecification(
-                            summarizeTool,
-                            DrSumMcpServer::handleSummarizeRequest
-                    );
-            
-            McpServerFeatures.SyncToolSpecification configureConnectionSpec = 
-                    new McpServerFeatures.SyncToolSpecification(
-                            configureConnectionTool,
-                            DrSumMcpServer::handleConfigureConnectionRequest
-                    );
-            
-            McpServerFeatures.SyncToolSpecification disconnectSpec = 
-                    new McpServerFeatures.SyncToolSpecification(
-                            disconnectTool,
-                            DrSumMcpServer::handleDisconnectRequest
-                    );
-            
-            McpServerFeatures.SyncToolSpecification getMetadataSpec = 
-                    new McpServerFeatures.SyncToolSpecification(
-                            getMetadataTool,
-                            DrSumMcpServer::handleGetMetadataRequest
-                    );
-            
-            McpServerFeatures.SyncToolSpecification executeQuerySpec = 
-                    new McpServerFeatures.SyncToolSpecification(
-                            executeQueryTool,
-                            DrSumMcpServer::handleExecuteQueryRequest
-                    );
-            
-            // Build and start the server
+            // Build the server first
             var server = McpServer.sync(transportProvider)
                     .serverInfo(serverInfo)
                     .capabilities(capabilities)
@@ -94,8 +56,33 @@ public class DrSumMcpServer {
                                 "'get_metadata' to retrieve table information, " +
                                 "'execute_query' to run SQL queries, " +
                                 "and 'disconnect' to close the connection.")
-                    .tools(List.of(summarizeSpec, configureConnectionSpec, disconnectSpec, getMetadataSpec, executeQuerySpec))
                     .build();
+            
+            // Register tools using the builder pattern (non-deprecated API)
+            server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+                    .tool(createSummarizeTool())
+                    .callHandler(DrSumMcpServer::handleSummarizeRequest)
+                    .build());
+            
+            server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+                    .tool(createConfigureConnectionTool())
+                    .callHandler(DrSumMcpServer::handleConfigureConnectionRequest)
+                    .build());
+            
+            server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+                    .tool(createDisconnectTool())
+                    .callHandler(DrSumMcpServer::handleDisconnectRequest)
+                    .build());
+            
+            server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+                    .tool(createGetMetadataTool())
+                    .callHandler(DrSumMcpServer::handleGetMetadataRequest)
+                    .build());
+            
+            server.addTool(McpServerFeatures.SyncToolSpecification.builder()
+                    .tool(createExecuteQueryTool())
+                    .callHandler(DrSumMcpServer::handleExecuteQueryRequest)
+                    .build());
             
             logger.info("DrSum MCP Server started successfully");
             
@@ -174,12 +161,13 @@ public class DrSumMcpServer {
      */
     private static McpSchema.CallToolResult handleSummarizeRequest(
             McpSyncServerExchange exchange, 
-            Map<String, Object> arguments) {
+            McpSchema.CallToolRequest request) {
         
         try {
             logger.info("Processing summarize request");
             
-            // Extract parameters
+            // Extract parameters from request
+            Map<String, Object> arguments = request.arguments();
             String text = (String) arguments.get("text");
             Integer maxSentences = arguments.containsKey("max_sentences") 
                     ? ((Number) arguments.get("max_sentences")).intValue() 
@@ -209,12 +197,13 @@ public class DrSumMcpServer {
      */
     private static McpSchema.CallToolResult handleConfigureConnectionRequest(
             McpSyncServerExchange exchange, 
-            Map<String, Object> arguments) {
+            McpSchema.CallToolRequest request) {
         
         try {
             logger.info("Processing configure_connection request");
             
-            // Extract and validate parameters
+            // Extract and validate parameters from request
+            Map<String, Object> arguments = request.arguments();
             String host = (String) arguments.get("host");
             Integer port = arguments.containsKey("port") 
                     ? ((Number) arguments.get("port")).intValue() 
@@ -272,7 +261,7 @@ public class DrSumMcpServer {
      */
     private static McpSchema.CallToolResult handleDisconnectRequest(
             McpSyncServerExchange exchange, 
-            Map<String, Object> arguments) {
+            McpSchema.CallToolRequest request) {
         
         try {
             logger.info("Processing disconnect request");
@@ -306,7 +295,7 @@ public class DrSumMcpServer {
      */
     private static McpSchema.CallToolResult handleGetMetadataRequest(
             McpSyncServerExchange exchange, 
-            Map<String, Object> arguments) {
+            McpSchema.CallToolRequest request) {
         
         try {
             logger.info("Processing get_metadata request");
@@ -316,7 +305,8 @@ public class DrSumMcpServer {
                 return createErrorResult("Not connected to Dr.Sum server. Please configure connection first.");
             }
             
-            // Extract parameters
+            // Extract parameters from request
+            Map<String, Object> arguments = request.arguments();
             String tableName = (String) arguments.get("table_name");
             Integer sampleRows = arguments.containsKey("sample_rows") 
                     ? ((Number) arguments.get("sample_rows")).intValue() 
@@ -354,7 +344,7 @@ public class DrSumMcpServer {
      */
     private static McpSchema.CallToolResult handleExecuteQueryRequest(
             McpSyncServerExchange exchange, 
-            Map<String, Object> arguments) {
+            McpSchema.CallToolRequest request) {
         
         try {
             logger.info("Processing execute_query request");
@@ -364,7 +354,8 @@ public class DrSumMcpServer {
                 return createErrorResult("Not connected to Dr.Sum server. Please configure connection first.");
             }
             
-            // Extract parameters
+            // Extract parameters from request
+            Map<String, Object> arguments = request.arguments();
             String sqlQuery = (String) arguments.get("sql_query");
             
             // Validate parameters

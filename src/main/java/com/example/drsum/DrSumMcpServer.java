@@ -51,6 +51,7 @@ public class DrSumMcpServer {
             McpSchema.Tool summarizeTool = createSummarizeTool();
             McpSchema.Tool configureConnectionTool = createConfigureConnectionTool();
             McpSchema.Tool disconnectTool = createDisconnectTool();
+            McpSchema.Tool getMetadataTool = createGetMetadataTool();
             
             // Create tool specifications
             McpServerFeatures.SyncToolSpecification summarizeSpec = 
@@ -71,6 +72,12 @@ public class DrSumMcpServer {
                             DrSumMcpServer::handleDisconnectRequest
                     );
             
+            McpServerFeatures.SyncToolSpecification getMetadataSpec = 
+                    new McpServerFeatures.SyncToolSpecification(
+                            getMetadataTool,
+                            DrSumMcpServer::handleGetMetadataRequest
+                    );
+            
             // Build and start the server
             var server = McpServer.sync(transportProvider)
                     .serverInfo(serverInfo)
@@ -80,7 +87,7 @@ public class DrSumMcpServer {
                                 "'get_metadata' to retrieve table information, " +
                                 "'execute_query' to run SQL queries, " +
                                 "and 'disconnect' to close the connection.")
-                    .tools(List.of(summarizeSpec, configureConnectionSpec, disconnectSpec))
+                    .tools(List.of(summarizeSpec, configureConnectionSpec, disconnectSpec, getMetadataSpec))
                     .build();
             
             logger.info("DrSum MCP Server started successfully");
@@ -129,6 +136,18 @@ public class DrSumMcpServer {
         return McpSchema.Tool.builder()
                 .name("disconnect")
                 .description("Disconnect from Dr.Sum server")
+                .build();
+    }
+    
+    /**
+     * Creates the get_metadata tool definition.
+     */
+    private static McpSchema.Tool createGetMetadataTool() {
+        return McpSchema.Tool.builder()
+                .name("get_metadata")
+                .description("Get table metadata with sample data from Dr.Sum. " +
+                           "Parameters: table_name (string, required), " +
+                           "sample_rows (integer, optional, default=3)")
                 .build();
     }
     
@@ -265,6 +284,54 @@ public class DrSumMcpServer {
     }
     
     /**
+     * Handles get_metadata tool requests.
+     */
+    private static McpSchema.CallToolResult handleGetMetadataRequest(
+            McpSyncServerExchange exchange, 
+            Map<String, Object> arguments) {
+        
+        try {
+            logger.info("Processing get_metadata request");
+            
+            // Check connection
+            if (!drSumConnection.isConnected()) {
+                return createErrorResult("Not connected to Dr.Sum server. Please configure connection first.");
+            }
+            
+            // Extract parameters
+            String tableName = (String) arguments.get("table_name");
+            Integer sampleRows = arguments.containsKey("sample_rows") 
+                    ? ((Number) arguments.get("sample_rows")).intValue() 
+                    : DEFAULT_SAMPLE_ROWS;
+            
+            // Validate parameters
+            if (tableName == null || tableName.trim().isEmpty()) {
+                return createErrorResult("table_name parameter is required");
+            }
+            
+            // Create metadata service and retrieve metadata
+            DrSumMetadataService metadataService = new DrSumMetadataService(drSumConnection);
+            String metadata = metadataService.getTableMetadata(tableName, sampleRows);
+            
+            // Create success response
+            McpSchema.TextContent content = new McpSchema.TextContent(metadata);
+            
+            logger.info("Successfully processed get_metadata request for table: {}", tableName);
+            return McpSchema.CallToolResult.builder().content(List.of(content)).build();
+            
+        } catch (DWException e) {
+            logger.error("Dr.Sum metadata retrieval error: {}", e.getMessage());
+            return createErrorResult("Failed to retrieve metadata: " + e.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("Invalid request: {}", e.getMessage());
+            return createErrorResult(e.getMessage());
+        } catch (Exception e) {
+            logger.error("Error processing get_metadata request", e);
+            return createErrorResult("Internal error: " + e.getMessage());
+        }
+    }
+    
+    /**
      * Simple text summarization logic.
      * In a real implementation, this would use advanced NLP techniques or AI models.
      */
@@ -310,6 +377,11 @@ public class DrSumMcpServer {
     // ========================================================================
     // Inner Classes - Dr.Sum Connection Management
     // ========================================================================
+    
+    /**
+     * Default number of sample rows to fetch with metadata.
+     */
+    private static final int DEFAULT_SAMPLE_ROWS = 3;
     
     /**
      * Dr.Sum connection configuration holder.
@@ -454,6 +526,181 @@ public class DrSumMcpServer {
          */
         public ConnectionConfig getConfig() {
             return config;
+        }
+    }
+    
+    // ========================================================================
+    // Inner Classes - Dr.Sum Metadata Service
+    // ========================================================================
+    
+    /**
+     * Dr.Sum metadata service.
+     * Retrieves table metadata and sample data.
+     */
+    static class DrSumMetadataService {
+        private final DrSumConnection dsConnection;
+        
+        public DrSumMetadataService(DrSumConnection connection) {
+            if (connection == null) {
+                throw new IllegalArgumentException("DrSumConnection cannot be null");
+            }
+            this.dsConnection = connection;
+        }
+        
+        /**
+         * Gets table metadata with sample data.
+         * 
+         * @param tableName Table name
+         * @param sampleRows Number of sample rows to retrieve
+         * @return Formatted metadata as JSON string
+         * @throws DWException If metadata retrieval fails
+         * @throws IllegalStateException If not connected
+         */
+        public String getTableMetadata(String tableName, int sampleRows) throws DWException {
+            // Validate parameters first (before connection check)
+            if (tableName == null || tableName.trim().isEmpty()) {
+                throw new IllegalArgumentException("Table name cannot be null or empty");
+            }
+            
+            if (sampleRows < 0) {
+                throw new IllegalArgumentException("Sample rows must be non-negative");
+            }
+            
+            // Then check connection
+            if (!dsConnection.isConnected()) {
+                throw new IllegalStateException("Not connected to Dr.Sum. Please configure connection first.");
+            }
+            
+            jp.co.dw_sapporo.drsum_ea.dbi.DWDbiConnection conn = dsConnection.getConnection();
+            String dbName = conn.m_sDatabase;
+            
+            logger.info("Retrieving metadata for table: {} with {} sample rows", tableName, sampleRows);
+            
+            try {
+                // Get schema information
+                jp.co.dw_sapporo.drsum_ea.DWColumnInfo[] schema = conn.getSchema(dbName, tableName);
+                
+                if (schema == null || schema.length == 0) {
+                    throw new DWException("Table not found or has no columns: " + tableName);
+                }
+                
+                // Get sample data
+                java.util.Vector<java.util.Vector<String>> samples = null;
+                if (sampleRows > 0) {
+                    jp.co.dw_sapporo.drsum_ea.dbi.DWDbiCursor cursor = conn.cursor();
+                    try {
+                        // Use LIMIT clause to get sample data
+                        String sql = String.format("SELECT * FROM \"%s\" LIMIT %d", tableName, sampleRows);
+                        cursor.execute(sql);
+                        samples = cursor.fetchmany(sampleRows);
+                    } finally {
+                        cursor.close();
+                    }
+                }
+                
+                // Format as JSON
+                return formatMetadataAsJson(tableName, schema, samples);
+                
+            } catch (DWException e) {
+                logger.error("Failed to retrieve metadata for table {}: {}", tableName, e.getMessage());
+                throw e;
+            }
+        }
+        
+        /**
+         * Formats metadata and sample data as JSON.
+         */
+        private String formatMetadataAsJson(String tableName, 
+                                          jp.co.dw_sapporo.drsum_ea.DWColumnInfo[] schema,
+                                          java.util.Vector<java.util.Vector<String>> samples) {
+            StringBuilder json = new StringBuilder();
+            json.append("{\n");
+            json.append("  \"table\": \"").append(escapeJson(tableName)).append("\",\n");
+            json.append("  \"columns\": [\n");
+            
+            // Format columns
+            for (int i = 0; i < schema.length; i++) {
+                jp.co.dw_sapporo.drsum_ea.DWColumnInfo col = schema[i];
+                json.append("    {\n");
+                json.append("      \"name\": \"").append(escapeJson(col.m_sName)).append("\",\n");
+                json.append("      \"display_name\": \"").append(escapeJson(col.m_sDisplay)).append("\",\n");
+                json.append("      \"type\": ").append(col.m_iType).append(",\n");
+                json.append("      \"type_name\": \"").append(getTypeName(col.m_iType)).append("\",\n");
+                json.append("      \"nullable\": ").append(col.m_iNull != 0).append(",\n");
+                json.append("      \"precision\": ").append(col.m_iPrecision).append(",\n");
+                json.append("      \"scale\": ").append(col.m_iScale).append("\n");
+                json.append("    }");
+                if (i < schema.length - 1) {
+                    json.append(",");
+                }
+                json.append("\n");
+            }
+            
+            json.append("  ],\n");
+            json.append("  \"sample_data\": ");
+            
+            // Format sample data
+            if (samples != null && !samples.isEmpty()) {
+                json.append("[\n");
+                for (int i = 0; i < samples.size(); i++) {
+                    java.util.Vector<String> row = samples.get(i);
+                    json.append("    [");
+                    for (int j = 0; j < row.size(); j++) {
+                        String value = row.get(j);
+                        if (value == null) {
+                            json.append("null");
+                        } else {
+                            json.append("\"").append(escapeJson(value)).append("\"");
+                        }
+                        if (j < row.size() - 1) {
+                            json.append(", ");
+                        }
+                    }
+                    json.append("]");
+                    if (i < samples.size() - 1) {
+                        json.append(",");
+                    }
+                    json.append("\n");
+                }
+                json.append("  ]\n");
+            } else {
+                json.append("[]\n");
+            }
+            
+            json.append("}");
+            return json.toString();
+        }
+        
+        /**
+         * Converts Dr.Sum type code to type name.
+         */
+        private String getTypeName(int typeCode) {
+            switch (typeCode) {
+                case 1: return "CHAR";
+                case 2: return "INTEGER";
+                case 3: return "DECIMAL";
+                case 4: return "FLOAT";
+                case 5: return "DOUBLE";
+                case 6: return "DATE";
+                case 7: return "TIME";
+                case 8: return "TIMESTAMP";
+                case 12: return "VARCHAR";
+                default: return "UNKNOWN(" + typeCode + ")";
+            }
+        }
+        
+        /**
+         * Escapes special characters for JSON.
+         */
+        private String escapeJson(String value) {
+            if (value == null) {
+                return "";
+            }
+            return value.replace("\\", "\\\\")
+                       .replace("\"", "\\\"")
+                       .replace("\n", "\\n")
+                       .replace("\r", "\\r")
+                       .replace("\t", "\\t");
         }
     }
 }

@@ -196,6 +196,79 @@ class DrSumMcpServerTest {
     // For unit tests, we would use mocking frameworks like Mockito
 
     // ========================================================================
+    // DrSumMetadataService Tests
+    // ========================================================================
+
+    @Test
+    @DisplayName("DrSumMetadataService should throw exception with null connection")
+    void testMetadataService_NullConnection() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.DrSumMetadataService(null);
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumMetadataService should throw exception when not connected")
+    void testMetadataService_NotConnected() {
+        DrSumMcpServer.DrSumMetadataService service = 
+            new DrSumMcpServer.DrSumMetadataService(connection);
+        
+        assertThrows(IllegalStateException.class, () -> {
+            service.getTableMetadata("test_table", 3);
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumMetadataService should throw exception for null table name")
+    void testMetadataService_NullTableName() {
+        DrSumMcpServer.DrSumMetadataService service = 
+            new DrSumMcpServer.DrSumMetadataService(connection);
+        
+        assertThrows(IllegalArgumentException.class, () -> {
+            service.getTableMetadata(null, 3);
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumMetadataService should throw exception for empty table name")
+    void testMetadataService_EmptyTableName() {
+        DrSumMcpServer.DrSumMetadataService service = 
+            new DrSumMcpServer.DrSumMetadataService(connection);
+        
+        assertThrows(IllegalArgumentException.class, () -> {
+            service.getTableMetadata("", 3);
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumMetadataService should throw exception for negative sample rows")
+    void testMetadataService_NegativeSampleRows() {
+        DrSumMcpServer.DrSumMetadataService service = 
+            new DrSumMcpServer.DrSumMetadataService(connection);
+        
+        assertThrows(IllegalArgumentException.class, () -> {
+            service.getTableMetadata("test_table", -1);
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumMetadataService should accept zero sample rows")
+    void testMetadataService_ZeroSampleRows() {
+        DrSumMcpServer.DrSumMetadataService service = 
+            new DrSumMcpServer.DrSumMetadataService(connection);
+        
+        // Should not throw exception with 0 rows (validation only)
+        assertDoesNotThrow(() -> {
+            // This will fail at connection check, but validates the parameter
+            try {
+                service.getTableMetadata("test_table", 0);
+            } catch (IllegalStateException e) {
+                // Expected - not connected
+            }
+        });
+    }
+
+    // ========================================================================
     // Summarize Tool Tests (Legacy)
     // ========================================================================
 

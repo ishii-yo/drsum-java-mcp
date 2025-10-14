@@ -1,7 +1,11 @@
 <!-- Logback Configuration for DrSum MCP Server -->
-<configuration>
-    <!-- Console appender for development -->
+<configuration debug="false">
+    <!-- CRITICAL: Disable status messages to prevent stdout pollution -->
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener" />
+    <!-- Console appender - MUST use stderr for MCP compatibility -->
+    <!-- MCP servers use stdout for JSON-RPC messages, so logs must go to stderr -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.err</target>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
@@ -23,11 +27,13 @@
 
     <!-- Logger configuration -->
     <logger name="com.example.drsum" level="INFO" />
-    <logger name="io.modelcontextprotocol" level="DEBUG" />
+    <logger name="io.modelcontextprotocol" level="INFO" />
     
     <!-- Root logger -->
+    <!-- Console logging disabled for MCP compatibility - only use FILE logging -->
+    <!-- This prevents interference with JSON-RPC messages on stdout -->
     <root level="INFO">
-        <appender-ref ref="CONSOLE" />
+        <!-- <appender-ref ref="CONSOLE" /> -->
         <appender-ref ref="FILE" />
     </root>
 </configuration>

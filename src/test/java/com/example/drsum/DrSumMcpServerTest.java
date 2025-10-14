@@ -3,6 +3,9 @@ package com.example.drsum;
 import io.modelcontextprotocol.spec.McpSchema;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+
+import jp.co.dw_sapporo.drsum_ea.DWException;
 
 import java.util.Map;
 import java.util.List;
@@ -14,23 +17,197 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class DrSumMcpServerTest {
 
-    private DrSumMcpServer server;
+    private DrSumMcpServer.ConnectionConfig validConfig;
+    private DrSumMcpServer.DrSumConnection connection;
 
     @BeforeEach
     void setUp() {
-        server = new DrSumMcpServer();
+        // Create a valid configuration for testing
+        validConfig = new DrSumMcpServer.ConnectionConfig(
+            "localhost",
+            6001,
+            "Administrator",
+            "",
+            "SALES"
+        );
+        connection = new DrSumMcpServer.DrSumConnection();
+    }
+
+    // ========================================================================
+    // ConnectionConfig Tests
+    // ========================================================================
+
+    @Test
+    @DisplayName("ConnectionConfig should be created with valid parameters")
+    void testConnectionConfig_ValidParameters() {
+        assertNotNull(validConfig);
+        assertEquals("localhost", validConfig.getHost());
+        assertEquals(6001, validConfig.getPort());
+        assertEquals("Administrator", validConfig.getUsername());
+        assertEquals("", validConfig.getPassword());
+        assertEquals("SALES", validConfig.getDatabase());
     }
 
     @Test
+    @DisplayName("ConnectionConfig should handle empty password")
+    void testConnectionConfig_EmptyPassword() {
+        DrSumMcpServer.ConnectionConfig config = new DrSumMcpServer.ConnectionConfig(
+            "localhost", 6001, "user", "", "db"
+        );
+        assertEquals("", config.getPassword());
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should handle null password as empty string")
+    void testConnectionConfig_NullPassword() {
+        DrSumMcpServer.ConnectionConfig config = new DrSumMcpServer.ConnectionConfig(
+            "localhost", 6001, "user", null, "db"
+        );
+        assertEquals("", config.getPassword());
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for null host")
+    void testConnectionConfig_NullHost() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig(null, 6001, "user", "pass", "db");
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for empty host")
+    void testConnectionConfig_EmptyHost() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig("", 6001, "user", "pass", "db");
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for invalid port (0)")
+    void testConnectionConfig_InvalidPortZero() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig("localhost", 0, "user", "pass", "db");
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for invalid port (negative)")
+    void testConnectionConfig_InvalidPortNegative() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig("localhost", -1, "user", "pass", "db");
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for invalid port (> 65535)")
+    void testConnectionConfig_InvalidPortTooLarge() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig("localhost", 65536, "user", "pass", "db");
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for null username")
+    void testConnectionConfig_NullUsername() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig("localhost", 6001, null, "pass", "db");
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for empty username")
+    void testConnectionConfig_EmptyUsername() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig("localhost", 6001, "", "pass", "db");
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for null database")
+    void testConnectionConfig_NullDatabase() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig("localhost", 6001, "user", "pass", null);
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig should throw exception for empty database")
+    void testConnectionConfig_EmptyDatabase() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            new DrSumMcpServer.ConnectionConfig("localhost", 6001, "user", "pass", "");
+        });
+    }
+
+    @Test
+    @DisplayName("ConnectionConfig toString should obfuscate password")
+    void testConnectionConfig_PasswordObfuscation() {
+        DrSumMcpServer.ConnectionConfig config = new DrSumMcpServer.ConnectionConfig(
+            "localhost", 6001, "user", "secretPassword", "db"
+        );
+        String configString = config.toString();
+        assertFalse(configString.contains("secretPassword"), 
+                   "Password should be obfuscated in toString()");
+        assertTrue(configString.contains("****"), 
+                  "toString() should contain obfuscated password marker");
+    }
+
+    // ========================================================================
+    // DrSumConnection Tests
+    // ========================================================================
+
+    @Test
+    @DisplayName("DrSumConnection should initially not be connected")
+    void testDrSumConnection_InitiallyNotConnected() {
+        assertFalse(connection.isConnected());
+    }
+
+    @Test
+    @DisplayName("DrSumConnection should throw exception when connecting with null config")
+    void testDrSumConnection_ConnectWithNullConfig() {
+        assertThrows(IllegalArgumentException.class, () -> {
+            connection.connect(null);
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumConnection getConnection should throw exception when not connected")
+    void testDrSumConnection_GetConnectionWhenNotConnected() {
+        assertThrows(IllegalStateException.class, () -> {
+            connection.getConnection();
+        });
+    }
+
+    @Test
+    @DisplayName("DrSumConnection should return null config when not connected")
+    void testDrSumConnection_GetConfigWhenNotConnected() {
+        assertNull(connection.getConfig());
+    }
+
+    @Test
+    @DisplayName("DrSumConnection disconnect should not throw when not connected")
+    void testDrSumConnection_DisconnectWhenNotConnected() {
+        assertDoesNotThrow(() -> {
+            connection.disconnect();
+        });
+    }
+
+    // Note: Actual connection tests require a running Dr.Sum server
+    // These are integration tests and should be run separately
+    // For unit tests, we would use mocking frameworks like Mockito
+
+    // ========================================================================
+    // Summarize Tool Tests (Legacy)
+    // ========================================================================
+
+    @Test
+    @DisplayName("Summarize tool test framework should work")
     void testSummarizeTool_BasicFunctionality() {
-        // Test data
         String longText = "This is the first sentence of a long document. " +
                          "This is the second sentence with more information. " +
                          "This is the third sentence that continues the text. " +
                          "This is the fourth sentence that should be excluded. " +
                          "This is the fifth sentence that should also be excluded.";
 
-        // Create a mock request
         McpSchema.CallToolRequest request = new McpSchema.CallToolRequest(
                 "summarize",
                 Map.of(
@@ -38,37 +215,7 @@ class DrSumMcpServerTest {
                         "max_sentences", 3
                 )
         );
-
-        // Note: This test structure shows how you would test the functionality
-        // In practice, you'd need to refactor DrSumMcpServer to make the summarization 
-        // logic testable by extracting it to a separate method or service class
         
         assertTrue(true, "Test framework is working");
-    }
-
-    @Test
-    void testTextSummarization_ShortText() {
-        String shortText = "This is a short text.";
-        
-        // For a complete test, you'd need to extract the summarization logic
-        // to a testable method
-        assertNotNull(shortText);
-        assertTrue(shortText.length() > 0);
-    }
-
-    @Test
-    void testTextSummarization_EmptyText() {
-        String emptyText = "";
-        
-        // Test empty text handling
-        assertTrue(emptyText.isEmpty());
-    }
-
-    @Test
-    void testTextSummarization_NullText() {
-        String nullText = null;
-        
-        // Test null text handling
-        assertNull(nullText);
     }
 }

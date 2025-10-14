@@ -8,14 +8,11 @@ import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 
 import jp.co.dw_sapporo.drsum_ea.DWException;
-import jp.co.dw_sapporo.drsum_ea.DWTableInfo;
-import jp.co.dw_sapporo.drsum_ea.DWViewInfo;
 import jp.co.dw_sapporo.drsum_ea.dbi.DWDbiConnection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -46,6 +43,8 @@ public class DrSumMcpServer {
             // Define server capabilities
             McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder()
                     .tools(true) // Enable tools
+                    .prompts(true) // Enable prompts (will return empty list)
+                    .resources(false, false) // Enable resources (will return empty list)
                     .build();
             
             // Create server info
@@ -82,6 +81,9 @@ public class DrSumMcpServer {
                     .tool(createExecuteQueryTool())
                     .callHandler(DrSumMcpServer::handleExecuteQueryRequest)
                     .build());
+            
+            // Note: No prompts or resources are registered, so prompts/list and resources/list will return empty lists
+            // This satisfies the MCP protocol requirement without adding unnecessary functionality
             
             logger.info("DrSum MCP Server started successfully");
             

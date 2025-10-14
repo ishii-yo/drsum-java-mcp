@@ -261,6 +261,7 @@ Unix/Linux/macOS:
     "drsum": {
       "command": "java",
       "args": [
+        "-Dfile.encoding=UTF-8",
         "-jar",
         "C:\\mb_dev\\github\\drsum-java-mcp\\target\\drsum-java-mcp-1.0.0-SNAPSHOT-fat.jar"
       ],
@@ -275,6 +276,10 @@ Unix/Linux/macOS:
   }
 }
 ```
+
+**重要**: 
+- 環境変数(`env`)の設定は必須です。Dr.Sum接続情報はここで設定します。
+- **日本語などのマルチバイト文字を使用する場合は、`"-Dfile.encoding=UTF-8"`を`args`の先頭に追加してください**（Windows環境では特に重要）。
 
 **重要**: 環境変数(`env`)の設定は必須です。Dr.Sum接続情報はここで設定します。
 
@@ -486,6 +491,59 @@ AI: get_metadata ツールを呼び出し
 4. Dr.Sumから切断
     ↓
 AI: データ分析結果を返答
+```
+
+## トラブルシューティング
+
+### マルチバイト文字（日本語）の文字化け
+
+**症状:**
+- SQLクエリやテーブル名に日本語を使用すると文字化けする
+- エラーメッセージに文字化けした文字列が表示される（例: "受注ビュー" が "蜿玲ｳｨ繝薙Η繝ｼ" のように表示される）
+
+**原因:**
+- Windows環境でJavaのデフォルト文字エンコーディングがMS932（Shift_JIS系）になっており、Dr.SumがUTF-8を期待しているため、文字エンコーディングの不一致が発生します。
+
+**解決方法（推奨）:**
+
+MCP設定ファイルのJava起動引数に `-Dfile.encoding=UTF-8` を追加します：
+
+```json
+{
+  "mcpServers": {
+    "drsum": {
+      "command": "java",
+      "args": [
+        "-Dfile.encoding=UTF-8",
+        "-jar",
+        "path/to/drsum-java-mcp-fat.jar"
+      ],
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "Administrator",
+        "DRSUM_PASSWORD": "",
+        "DRSUM_DATABASE": "SALES"
+      }
+    }
+  }
+}
+```
+
+**クロスプラットフォーム対応:**
+- この設定は **Windows、Linux、macOS 全てのプラットフォームで推奨** されます
+- Linux/macOSでは通常デフォルトでUTF-8ですが、明示的に指定することで環境依存を排除できます
+
+**検証方法:**
+
+1. MCPクライアント（Claude Desktopなど）を再起動
+2. 日本語を含むテーブル名やクエリをテスト
+3. 正しく表示されることを確認
+
+例:
+```
+ユーザー: 「受注ビューのデータを取得してください」
+→ 正常に動作し、日本語が正しく表示されるはずです
 ```
 
 ## プロジェクト構造

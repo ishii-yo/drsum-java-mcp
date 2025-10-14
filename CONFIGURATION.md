@@ -61,6 +61,7 @@ Dr.Sum接続には以下の環境変数が必要です：
     "drsum": {
       "command": "java",
       "args": [
+        "-Dfile.encoding=UTF-8",
         "-jar", 
         "C:\\mb_dev\\github\\drsum-java-mcp\\target\\drsum-java-mcp-1.0.0-SNAPSHOT-fat.jar"
       ],
@@ -76,6 +77,10 @@ Dr.Sum接続には以下の環境変数が必要です：
 }
 ```
 
+**重要ポイント:**
+- `"-Dfile.encoding=UTF-8"` を `args` の先頭（`-jar` の前）に配置することで、**日本語などのマルチバイト文字の文字化けを防止**します
+- この設定は **Windows、Linux、macOS 全てのプラットフォームで推奨** されます
+
 ### 開発環境設定例
 
 ```json
@@ -83,7 +88,7 @@ Dr.Sum接続には以下の環境変数が必要です：
   "mcpServers": {
     "drsum-dev": {
       "command": "java",
-      "args": ["-jar", "path/to/drsum-java-mcp-fat.jar"],
+      "args": ["-Dfile.encoding=UTF-8", "-jar", "path/to/drsum-java-mcp-fat.jar"],
       "env": {
         "DRSUM_HOST": "localhost",
         "DRSUM_PORT": "6001",
@@ -103,7 +108,7 @@ Dr.Sum接続には以下の環境変数が必要です：
   "mcpServers": {
     "drsum-prod": {
       "command": "java",
-      "args": ["-jar", "path/to/drsum-java-mcp-fat.jar"],
+      "args": ["-Dfile.encoding=UTF-8", "-jar", "path/to/drsum-java-mcp-fat.jar"],
       "env": {
         "DRSUM_HOST": "prod-server.company.com",
         "DRSUM_PORT": "6001",
@@ -123,7 +128,7 @@ Dr.Sum接続には以下の環境変数が必要です：
   "mcpServers": {
     "drsum-dev": {
       "command": "java",
-      "args": ["-jar", "path/to/drsum-java-mcp-fat.jar"],
+      "args": ["-Dfile.encoding=UTF-8", "-jar", "path/to/drsum-java-mcp-fat.jar"],
       "env": {
         "DRSUM_HOST": "localhost",
         "DRSUM_PORT": "6001",
@@ -134,7 +139,7 @@ Dr.Sum接続には以下の環境変数が必要です：
     },
     "drsum-prod": {
       "command": "java",
-      "args": ["-jar", "path/to/drsum-java-mcp-fat.jar"],
+      "args": ["-Dfile.encoding=UTF-8", "-jar", "path/to/drsum-java-mcp-fat.jar"],
       "env": {
         "DRSUM_HOST": "prod-server",
         "DRSUM_PORT": "6001",
@@ -224,6 +229,59 @@ Error: Environment variable DRSUM_PORT must be a valid integer. Got: abc
 1. ネットワーク遅延を確認（Dr.Sumサーバーが遠隔地にある場合）
 2. 一度のツール呼び出しで必要な情報を全て取得するようにプロンプトを工夫
 3. サンプルデータの行数を減らす（`sample_rows`パラメータ調整）
+
+### マルチバイト文字（日本語）の文字化け
+
+**症状:**
+- SQLクエリやテーブル名に日本語を使用すると文字化けが発生
+- Dr.Sum側でエラーが発生し、文字化けしたテーブル名が表示される
+  - 例: "受注ビュー" → "蜿玲ｳｨ繝薙Η繝ｼ"
+
+**原因:**
+- Windows環境でJavaのデフォルト文字エンコーディングがMS932（Shift_JIS系）になっている
+- Dr.SumがUTF-8エンコーディングを期待しているため、文字エンコーディングの不一致が発生
+
+**解決方法:**
+
+MCP設定ファイルの `args` 配列に `-Dfile.encoding=UTF-8` を追加します（`-jar` の **前** に配置）：
+
+```json
+{
+  "mcpServers": {
+    "drsum": {
+      "command": "java",
+      "args": [
+        "-Dfile.encoding=UTF-8",
+        "-jar",
+        "path/to/drsum-java-mcp-fat.jar"
+      ],
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "Administrator",
+        "DRSUM_PASSWORD": "",
+        "DRSUM_DATABASE": "SALES"
+      }
+    }
+  }
+}
+```
+
+**重要ポイント:**
+- この設定は **全てのプラットフォーム（Windows、Linux、macOS）で推奨** されます
+- Linux/macOSでは通常デフォルトでUTF-8ですが、明示的指定により環境依存を排除できます
+- 設定変更後はMCPクライアント（Claude Desktopなど）の再起動が必要です
+
+**検証方法:**
+```
+# テーブル一覧取得で日本語テーブル名を確認
+AI: 「データベースのテーブル一覧を取得してください」
+
+# 日本語テーブル名でクエリ実行
+AI: 「受注ビューからデータを5件取得してください」
+```
+
+正常に動作する場合、日本語が文字化けせずに表示されます。
 
 ## セキュリティベストプラクティス
 

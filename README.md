@@ -9,15 +9,17 @@ DrSum MCP Serverは、AIアシスタント（Claude Desktopなど）やアプリ
 ## 主な機能
 
 ### Dr.Sum分析機能
-- **データベース接続管理**: Dr.Sumサーバーへの接続・切断
-- **メタ情報取得**: テーブル構造とサンプルデータの取得（デフォルト3行）
+- **環境変数ベースの接続管理**: MCPクライアント設定で環境変数を設定
+- **都度接続方式**: ツール呼び出しごとに接続・切断を行い、リソースリークを防止
+- **メタ情報取得**: テーブル構造とサンプルデータの取得（デフォルト3行、設定可能）
 - **SQLクエリー実行**: 任意のSQLクエリを実行し、結果をJSON形式で取得
+- **自動接続管理**: ユーザーが接続を意識する必要なし
 
 ### その他の機能
-- **テキスト要約**: 長いテキストを指定された文数に要約（サンプル機能）
 - **MCP標準準拠**: Model Context Protocolの仕様に準拠
 - **STDIO通信**: 標準入出力を使用した通信
-- **セキュリティ**: パスワードの秘匿化
+- **セキュリティ**: パスワードの秘匿化、環境変数での安全な認証情報管理
+- **シンプルな設計**: 接続状態を保持しない、状態管理不要
 
 ## 必要条件
 
@@ -251,7 +253,7 @@ Unix/Linux/macOS:
 }
 ```
 
-**設定例2A: Fat JARで起動（推奨・単一ファイル）**
+**設定例2A: Fat JARで起動（推奨・単一ファイル） + 環境変数設定**
 
 ```json
 {
@@ -261,11 +263,20 @@ Unix/Linux/macOS:
       "args": [
         "-jar",
         "C:\\mb_dev\\github\\drsum-java-mcp\\target\\drsum-java-mcp-1.0.0-SNAPSHOT-fat.jar"
-      ]
+      ],
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "Administrator",
+        "DRSUM_PASSWORD": "",
+        "DRSUM_DATABASE": "SALES"
+      }
     }
   }
 }
 ```
+
+**重要**: 環境変数(`env`)の設定は必須です。Dr.Sum接続情報はここで設定します。
 
 **設定例2B: 通常JARで起動（依存関係分離）**
 
@@ -326,31 +337,44 @@ Unix/Linux/macOS:
 
 を指定します。
 
-### 利用可能なツール
+### 接続情報の設定
 
-#### `configure_connection`
-Dr.Sumサーバーへの接続を確立します。
+Dr.Sumへの接続情報は、MCPクライアント設定の環境変数(`env`)で設定します。
 
-**パラメータ:**
-- `host` (必須): Dr.Sumサーバーのホスト名またはIPアドレス
-- `port` (必須): Dr.Sumサーバーのポート番号
-- `username` (必須): 認証用ユーザー名
-- `password` (オプション): 認証用パスワード（空文字列可）
-- `database` (必須): 接続するデータベース名
+**必須環境変数:**
+- `DRSUM_HOST`: Dr.Sumサーバーのホスト名またはIPアドレス
+- `DRSUM_PORT`: Dr.Sumサーバーのポート番号
+- `DRSUM_USERNAME`: 認証用ユーザー名
+- `DRSUM_DATABASE`: 接続するデータベース名
 
-**例:**
+**オプション環境変数:**
+- `DRSUM_PASSWORD`: 認証用パスワード（未設定または空文字列で認証なし）
+
+**設定例（Claude Desktop）:**
 ```json
 {
-  "tool": "configure_connection",
-  "arguments": {
-    "host": "localhost",
-    "port": 6001,
-    "username": "Administrator",
-    "password": "",
-    "database": "SALES"
+  "mcpServers": {
+    "drsum": {
+      "command": "java",
+      "args": ["-jar", "path/to/drsum-java-mcp-fat.jar"],
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "Administrator",
+        "DRSUM_PASSWORD": "",
+        "DRSUM_DATABASE": "SALES"
+      }
+    }
   }
 }
 ```
+
+### 利用可能なツール
+
+**接続方式について:**
+- 接続情報は環境変数から読み取られます
+- 各ツール呼び出し時に自動的に接続・切断が行われます（都度接続方式）
+- ユーザーが接続を意識する必要はありません
 
 #### `get_metadata`
 テーブルのメタ情報とサンプルデータを取得します。
@@ -413,17 +437,27 @@ SQLクエリを実行し、結果を取得します。
 }
 ```
 
-#### `disconnect`
-Dr.Sumサーバーとの接続を切断します。
+### 都度接続方式のメリット
 
-**パラメータ:** なし
+1. **シンプル**: 接続状態を管理する必要がない
+2. **安全**: リソースリークのリスクなし
+3. **自動**: ユーザーが接続/切断を意識不要
+4. **セキュア**: 認証情報は環境変数で管理
 
-#### `summarize`（サンプル機能）
-テキスト内容を要約します。
+### 都度接続方式の動作
 
-**パラメータ:**
-- `text` (必須): 要約するテキスト内容
-- `max_sentences` (オプション): 要約の最大文数（デフォルト: 3）
+```
+ユーザー: 「受注ビューのデータを分析して」
+    ↓
+AI: get_metadata ツールを呼び出し
+    ↓
+1. 環境変数から接続情報を読み取り
+2. Dr.Sumに接続
+3. メタデータとサンプルデータを取得
+4. Dr.Sumから切断
+    ↓
+AI: データ分析結果を返答
+```
 
 ## プロジェクト構造
 

@@ -8,11 +8,14 @@ import io.modelcontextprotocol.spec.McpSchema;
 import io.modelcontextprotocol.server.McpSyncServerExchange;
 
 import jp.co.dw_sapporo.drsum_ea.DWException;
+import jp.co.dw_sapporo.drsum_ea.DWTableInfo;
+import jp.co.dw_sapporo.drsum_ea.DWViewInfo;
 import jp.co.dw_sapporo.drsum_ea.dbi.DWDbiConnection;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -26,8 +29,12 @@ public class DrSumMcpServer {
     
     private static final Logger logger = LoggerFactory.getLogger(DrSumMcpServer.class);
     
-    // Dr.Sum connection instance (shared across tools)
-    private static DrSumConnection drSumConnection = new DrSumConnection();
+    // Environment variable names for Dr.Sum connection
+    private static final String ENV_DRSUM_HOST = "DRSUM_HOST";
+    private static final String ENV_DRSUM_PORT = "DRSUM_PORT";
+    private static final String ENV_DRSUM_USERNAME = "DRSUM_USERNAME";
+    private static final String ENV_DRSUM_PASSWORD = "DRSUM_PASSWORD";
+    private static final String ENV_DRSUM_DATABASE = "DRSUM_DATABASE";
 
     public static void main(String[] args) {
         try {
@@ -52,21 +59,18 @@ public class DrSumMcpServer {
                     .serverInfo(serverInfo)
                     .capabilities(capabilities)
                     .instructions("DrSum MCP Server provides Dr.Sum database analysis capabilities. " +
-                                "Use 'configure_connection' to connect to Dr.Sum, " +
-                                "'get_metadata' to retrieve table information, " +
-                                "'execute_query' to run SQL queries, " +
-                                "and 'disconnect' to close the connection.")
+                                "Connection information is configured via environment variables " +
+                                "(DRSUM_HOST, DRSUM_PORT, DRSUM_USERNAME, DRSUM_PASSWORD, DRSUM_DATABASE). " +
+                                "Use 'list_tables' to get a list of all tables and views in the database, " +
+                                "use 'get_metadata' to retrieve detailed table information with sample data, " +
+                                "and 'execute_query' to run SQL queries. " +
+                                "Connections are established on-demand for each tool call.")
                     .build();
             
             // Register tools using the builder pattern (non-deprecated API)
             server.addTool(McpServerFeatures.SyncToolSpecification.builder()
-                    .tool(createConfigureConnectionTool())
-                    .callHandler(DrSumMcpServer::handleConfigureConnectionRequest)
-                    .build());
-            
-            server.addTool(McpServerFeatures.SyncToolSpecification.builder()
-                    .tool(createDisconnectTool())
-                    .callHandler(DrSumMcpServer::handleDisconnectRequest)
+                    .tool(createListTablesTool())
+                    .callHandler(DrSumMcpServer::handleListTablesRequest)
                     .build());
             
             server.addTool(McpServerFeatures.SyncToolSpecification.builder()
@@ -97,29 +101,20 @@ public class DrSumMcpServer {
     }
     
     /**
-     * Creates the configure_connection tool definition.
+     * Creates the list_tables tool definition.
+     * Connection information is read from environment variables on each call.
      */
-    private static McpSchema.Tool createConfigureConnectionTool() {
+    private static McpSchema.Tool createListTablesTool() {
         return McpSchema.Tool.builder()
-                .name("configure_connection")
-                .description("Configure and establish connection to Dr.Sum server. " +
-                           "Parameters: host (string), port (integer), username (string), " +
-                           "password (string, optional), database (string)")
-                .build();
-    }
-    
-    /**
-     * Creates the disconnect tool definition.
-     */
-    private static McpSchema.Tool createDisconnectTool() {
-        return McpSchema.Tool.builder()
-                .name("disconnect")
-                .description("Disconnect from Dr.Sum server")
+                .name("list_tables")
+                .description("Get a list of all tables and views in the Dr.Sum database. " +
+                           "No parameters required. Returns table names with type information (table or view).")
                 .build();
     }
     
     /**
      * Creates the get_metadata tool definition.
+     * Connection information is read from environment variables on each call.
      */
     private static McpSchema.Tool createGetMetadataTool() {
         return McpSchema.Tool.builder()
@@ -132,127 +127,81 @@ public class DrSumMcpServer {
     
     /**
      * Creates the execute_query tool definition.
+     * Connection information is read from environment variables on each call.
      */
     private static McpSchema.Tool createExecuteQueryTool() {
         return McpSchema.Tool.builder()
                 .name("execute_query")
                 .description("Execute a SQL query on Dr.Sum database. " +
+                           "Connection is established from environment variables. " +
                            "Parameters: sql_query (string, required)")
                 .build();
     }
     
     /**
-     * Handles configure_connection tool requests.
+     * Handles list_tables tool requests.
+     * Uses on-demand connection pattern: connects, retrieves table list, disconnects.
      */
-    private static McpSchema.CallToolResult handleConfigureConnectionRequest(
+    private static McpSchema.CallToolResult handleListTablesRequest(
             McpSyncServerExchange exchange, 
             McpSchema.CallToolRequest request) {
         
-        try {
-            logger.info("Processing configure_connection request");
-            
-            // Extract and validate parameters from request
-            Map<String, Object> arguments = request.arguments();
-            String host = (String) arguments.get("host");
-            Integer port = arguments.containsKey("port") 
-                    ? ((Number) arguments.get("port")).intValue() 
-                    : null;
-            String username = (String) arguments.get("username");
-            String password = arguments.containsKey("password") 
-                    ? (String) arguments.get("password") 
-                    : "";
-            String database = (String) arguments.get("database");
-            
-            // Validate required parameters
-            if (host == null || host.trim().isEmpty()) {
-                return createErrorResult("Host parameter is required");
-            }
-            if (port == null) {
-                return createErrorResult("Port parameter is required");
-            }
-            if (username == null || username.trim().isEmpty()) {
-                return createErrorResult("Username parameter is required");
-            }
-            if (database == null || database.trim().isEmpty()) {
-                return createErrorResult("Database parameter is required");
-            }
-            
-            // Create connection configuration
-            ConnectionConfig config = new ConnectionConfig(host, port, username, password, database);
-            
-            // Establish connection
-            drSumConnection.connect(config);
-            
-            // Create success response
-            String successMessage = String.format(
-                "Successfully connected to Dr.Sum server at %s:%d, database: %s",
-                host, port, database
-            );
-            McpSchema.TextContent content = new McpSchema.TextContent(successMessage);
-            
-            logger.info("Successfully processed configure_connection request");
-            return McpSchema.CallToolResult.builder().content(List.of(content)).build();
-            
-        } catch (DWException e) {
-            logger.error("Dr.Sum connection error: {}", e.getMessage());
-            return createErrorResult("Failed to connect to Dr.Sum: " + e.getMessage());
-        } catch (IllegalArgumentException e) {
-            logger.error("Invalid connection parameters: {}", e.getMessage());
-            return createErrorResult("Invalid parameters: " + e.getMessage());
-        } catch (Exception e) {
-            logger.error("Error processing configure_connection request", e);
-            return createErrorResult("Internal error: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Handles disconnect tool requests.
-     */
-    private static McpSchema.CallToolResult handleDisconnectRequest(
-            McpSyncServerExchange exchange, 
-            McpSchema.CallToolRequest request) {
+        DrSumConnection connection = null;
         
         try {
-            logger.info("Processing disconnect request");
+            logger.info("Processing list_tables request");
             
-            if (!drSumConnection.isConnected()) {
-                return createErrorResult("Not connected to Dr.Sum server");
-            }
+            // Create connection from environment variables
+            ConnectionConfig config = ConnectionConfig.fromEnvironment();
+            connection = new DrSumConnection();
+            connection.connect(config);
             
-            // Disconnect
-            drSumConnection.disconnect();
+            logger.info("Connected to Dr.Sum for table list retrieval");
+            
+            // Create metadata service and retrieve table list
+            DrSumMetadataService metadataService = new DrSumMetadataService(connection);
+            String tableList = metadataService.getTableList();
             
             // Create success response
-            McpSchema.TextContent content = new McpSchema.TextContent(
-                "Successfully disconnected from Dr.Sum server"
-            );
+            McpSchema.TextContent content = new McpSchema.TextContent(tableList);
             
-            logger.info("Successfully processed disconnect request");
+            logger.info("Successfully processed list_tables request");
             return McpSchema.CallToolResult.builder().content(List.of(content)).build();
             
         } catch (DWException e) {
-            logger.error("Dr.Sum disconnection error: {}", e.getMessage());
-            return createErrorResult("Failed to disconnect from Dr.Sum: " + e.getMessage());
+            logger.error("Dr.Sum table list retrieval error: {}", e.getMessage());
+            return createErrorResult("Failed to retrieve table list: " + e.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("Invalid request: {}", e.getMessage());
+            return createErrorResult(e.getMessage());
         } catch (Exception e) {
-            logger.error("Error processing disconnect request", e);
+            logger.error("Error processing list_tables request", e);
             return createErrorResult("Internal error: " + e.getMessage());
+        } finally {
+            // Always disconnect
+            if (connection != null && connection.isConnected()) {
+                try {
+                    connection.disconnect();
+                    logger.info("Disconnected from Dr.Sum after table list retrieval");
+                } catch (DWException e) {
+                    logger.error("Error disconnecting from Dr.Sum: {}", e.getMessage());
+                }
+            }
         }
     }
     
     /**
      * Handles get_metadata tool requests.
+     * Uses on-demand connection pattern: connects, retrieves metadata, disconnects.
      */
     private static McpSchema.CallToolResult handleGetMetadataRequest(
             McpSyncServerExchange exchange, 
             McpSchema.CallToolRequest request) {
         
+        DrSumConnection connection = null;
+        
         try {
             logger.info("Processing get_metadata request");
-            
-            // Check connection
-            if (!drSumConnection.isConnected()) {
-                return createErrorResult("Not connected to Dr.Sum server. Please configure connection first.");
-            }
             
             // Extract parameters from request
             Map<String, Object> arguments = request.arguments();
@@ -266,8 +215,15 @@ public class DrSumMcpServer {
                 return createErrorResult("table_name parameter is required");
             }
             
+            // Create connection from environment variables
+            ConnectionConfig config = ConnectionConfig.fromEnvironment();
+            connection = new DrSumConnection();
+            connection.connect(config);
+            
+            logger.info("Connected to Dr.Sum for metadata retrieval");
+            
             // Create metadata service and retrieve metadata
-            DrSumMetadataService metadataService = new DrSumMetadataService(drSumConnection);
+            DrSumMetadataService metadataService = new DrSumMetadataService(connection);
             String metadata = metadataService.getTableMetadata(tableName, sampleRows);
             
             // Create success response
@@ -285,23 +241,31 @@ public class DrSumMcpServer {
         } catch (Exception e) {
             logger.error("Error processing get_metadata request", e);
             return createErrorResult("Internal error: " + e.getMessage());
+        } finally {
+            // Always disconnect
+            if (connection != null && connection.isConnected()) {
+                try {
+                    connection.disconnect();
+                    logger.info("Disconnected from Dr.Sum after metadata retrieval");
+                } catch (DWException e) {
+                    logger.error("Error disconnecting from Dr.Sum: {}", e.getMessage());
+                }
+            }
         }
     }
     
     /**
      * Handles execute_query tool requests.
+     * Uses on-demand connection pattern: connects, executes query, disconnects.
      */
     private static McpSchema.CallToolResult handleExecuteQueryRequest(
             McpSyncServerExchange exchange, 
             McpSchema.CallToolRequest request) {
         
+        DrSumConnection connection = null;
+        
         try {
             logger.info("Processing execute_query request");
-            
-            // Check connection
-            if (!drSumConnection.isConnected()) {
-                return createErrorResult("Not connected to Dr.Sum server. Please configure connection first.");
-            }
             
             // Extract parameters from request
             Map<String, Object> arguments = request.arguments();
@@ -312,8 +276,15 @@ public class DrSumMcpServer {
                 return createErrorResult("sql_query parameter is required");
             }
             
+            // Create connection from environment variables
+            ConnectionConfig config = ConnectionConfig.fromEnvironment();
+            connection = new DrSumConnection();
+            connection.connect(config);
+            
+            logger.info("Connected to Dr.Sum for query execution");
+            
             // Create query service and execute query
-            DrSumQueryService queryService = new DrSumQueryService(drSumConnection);
+            DrSumQueryService queryService = new DrSumQueryService(connection);
             String results = queryService.executeQuery(sqlQuery);
             
             // Create success response
@@ -331,6 +302,16 @@ public class DrSumMcpServer {
         } catch (Exception e) {
             logger.error("Error processing execute_query request", e);
             return createErrorResult("Internal error: " + e.getMessage());
+        } finally {
+            // Always disconnect
+            if (connection != null && connection.isConnected()) {
+                try {
+                    connection.disconnect();
+                    logger.info("Disconnected from Dr.Sum after query execution");
+                } catch (DWException e) {
+                    logger.error("Error disconnecting from Dr.Sum: {}", e.getMessage());
+                }
+            }
         }
     }
     
@@ -400,6 +381,64 @@ public class DrSumMcpServer {
             // Obfuscate password for logging
             return String.format("ConnectionConfig{host='%s', port=%d, username='%s', password=****, database='%s'}",
                                host, port, username, database);
+        }
+        
+        /**
+         * Creates ConnectionConfig from environment variables.
+         * 
+         * @return ConnectionConfig created from environment variables
+         * @throws IllegalStateException if required environment variables are not set
+         */
+        public static ConnectionConfig fromEnvironment() {
+            logger.info("Reading Dr.Sum connection information from environment variables");
+            
+            // Read environment variables
+            String host = System.getenv(ENV_DRSUM_HOST);
+            String portStr = System.getenv(ENV_DRSUM_PORT);
+            String username = System.getenv(ENV_DRSUM_USERNAME);
+            String password = System.getenv(ENV_DRSUM_PASSWORD);
+            String database = System.getenv(ENV_DRSUM_DATABASE);
+            
+            // Validate required environment variables
+            if (host == null || host.trim().isEmpty()) {
+                throw new IllegalStateException(
+                    "Environment variable " + ENV_DRSUM_HOST + " is not set. " +
+                    "Please configure Dr.Sum connection information in MCP settings.");
+            }
+            if (portStr == null || portStr.trim().isEmpty()) {
+                throw new IllegalStateException(
+                    "Environment variable " + ENV_DRSUM_PORT + " is not set. " +
+                    "Please configure Dr.Sum connection information in MCP settings.");
+            }
+            if (username == null || username.trim().isEmpty()) {
+                throw new IllegalStateException(
+                    "Environment variable " + ENV_DRSUM_USERNAME + " is not set. " +
+                    "Please configure Dr.Sum connection information in MCP settings.");
+            }
+            if (database == null || database.trim().isEmpty()) {
+                throw new IllegalStateException(
+                    "Environment variable " + ENV_DRSUM_DATABASE + " is not set. " +
+                    "Please configure Dr.Sum connection information in MCP settings.");
+            }
+            
+            // Parse port number
+            int port;
+            try {
+                port = Integer.parseInt(portStr);
+            } catch (NumberFormatException e) {
+                throw new IllegalStateException(
+                    "Environment variable " + ENV_DRSUM_PORT + " must be a valid integer. Got: " + portStr);
+            }
+            
+            // Password can be empty
+            if (password == null) {
+                password = "";
+            }
+            
+            logger.info("Successfully read connection information from environment (host={}, port={}, username={}, database={})",
+                       host, port, username, database);
+            
+            return new ConnectionConfig(host, port, username, password, database);
         }
     }
     
@@ -651,6 +690,99 @@ public class DrSumMcpServer {
                 throw new IllegalArgumentException("DrSumConnection cannot be null");
             }
             this.dsConnection = connection;
+        }
+        
+        /**
+         * Gets list of all tables and views in the database.
+         * 
+         * @return JSON string containing table and view information
+         * @throws DWException If table list retrieval fails
+         * @throws IllegalStateException If not connected
+         */
+        public String getTableList() throws DWException {
+            // Check connection
+            if (!dsConnection.isConnected()) {
+                throw new IllegalStateException("Not connected to Dr.Sum. Please configure connection first.");
+            }
+            
+            jp.co.dw_sapporo.drsum_ea.dbi.DWDbiConnection conn = dsConnection.getConnection();
+            String dbName = conn.m_sDatabase;
+            
+            logger.info("Retrieving table list for database: {}", dbName);
+            
+            try {
+                // Get table list
+                jp.co.dw_sapporo.drsum_ea.DWTableInfo[] tableList = conn.getTableList(dbName);
+                
+                if (tableList == null || tableList.length == 0) {
+                    logger.warn("No tables found in database: {}", dbName);
+                    return "{\"database\": \"" + escapeJson(dbName) + "\", \"tables\": [], \"views\": []}";
+                }
+                
+                // Separate tables and views
+                java.util.List<String> tables = new java.util.ArrayList<>();
+                java.util.List<String> views = new java.util.ArrayList<>();
+                
+                for (jp.co.dw_sapporo.drsum_ea.DWTableInfo tableInfo : tableList) {
+                    String tableName = tableInfo.m_sName;
+                    
+                    // Check if it's a view by getting view info
+                    jp.co.dw_sapporo.drsum_ea.DWViewInfo viewInfo = conn.getViewInfo(dbName, tableName);
+                    
+                    if (viewInfo != null && viewInfo.m_iType != 0) {
+                        views.add(tableName);
+                    } else {
+                        tables.add(tableName);
+                    }
+                }
+                
+                logger.info("Found {} tables and {} views", tables.size(), views.size());
+                
+                // Format as JSON
+                return formatTableListAsJson(dbName, tables, views);
+                
+            } catch (DWException e) {
+                logger.error("Failed to retrieve table list: {}", e.getMessage());
+                throw e;
+            }
+        }
+        
+        /**
+         * Formats table list as JSON.
+         */
+        private String formatTableListAsJson(String dbName, 
+                                            java.util.List<String> tables, 
+                                            java.util.List<String> views) {
+            StringBuilder json = new StringBuilder();
+            json.append("{\n");
+            json.append("  \"database\": \"").append(escapeJson(dbName)).append("\",\n");
+            
+            // Format tables
+            json.append("  \"tables\": [\n");
+            for (int i = 0; i < tables.size(); i++) {
+                json.append("    \"").append(escapeJson(tables.get(i))).append("\"");
+                if (i < tables.size() - 1) {
+                    json.append(",");
+                }
+                json.append("\n");
+            }
+            json.append("  ],\n");
+            
+            // Format views
+            json.append("  \"views\": [\n");
+            for (int i = 0; i < views.size(); i++) {
+                json.append("    \"").append(escapeJson(views.get(i))).append("\"");
+                if (i < views.size() - 1) {
+                    json.append(",");
+                }
+                json.append("\n");
+            }
+            json.append("  ],\n");
+            
+            json.append("  \"total_count\": ").append(tables.size() + views.size()).append("\n");
+            json.append("}");
+            
+            return json.toString();
         }
         
         /**

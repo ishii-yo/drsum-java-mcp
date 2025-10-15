@@ -51,17 +51,18 @@
 - サンプル要約ツール（summarize）の実装
 - 基本的なUnit testの雛形
 - DrSumEA.jarのローカルMavenリポジトリへのインストール手順確認
-
-#### ❌ 未実装のもの
 - Dr.Sum接続機能の実装
 - メタ情報取得ツールの実装
 - サンプルデータの取得機能
 - クエリー実行ツールの実装
 - 接続情報の保持・管理機能
-- 接続情報の秘匿化
-- SOLID原則に基づいたコードのリファクタリング
 - DrSumEA.jarを使用した実装
 - 実際の機能に対応したUnit test
+
+#### ❌ 未実装のもの
+
+- 接続情報の秘匿化
+- SOLID原則に基づいたコードのリファクタリング
 
 ---
 
@@ -102,15 +103,32 @@ DrSumMcpServer.java
 │   ├── ConnectionConfig (接続情報保持)
 │   └── connect() / disconnect() / isConnected()
 ├── DrSumMetadataService (メタ情報取得 - Single Responsibility)
-│   ├── getTableMetadata()
-│   └── getSampleData()
+│   ├── getTableList()          ← テーブル・ビュー一覧取得
+│   ├── getTableMetadata()      ← テーブルメタデータ取得
+│   └── getSampleData()         ← サンプルデータ取得
 └── DrSumQueryService (クエリー実行 - Single Responsibility)
     └── executeQuery()
 ```
 
 #### MCPツール定義
 
-1. **get_metadata**
+1. **list_tables**
+   - パラメータ：なし
+   - 機能：
+     - 環境変数から接続情報を読み取り、Dr.Sumに接続
+     - データベース内の全テーブルとビューのリストを取得
+     - 切断
+   - 戻り値：テーブル名とビュー名のリスト（JSON形式）
+     ```json
+     {
+       "database": "データベース名",
+       "tables": ["テーブル1", "テーブル2", ...],
+       "views": ["ビュー1", "ビュー2", ...],
+       "total_count": 件数
+     }
+     ```
+
+2. **get_metadata**
    - パラメータ：table_name, sample_rows (optional, default=3)
    - 機能：
      - 環境変数から接続情報を読み取り、Dr.Sumに接続
@@ -118,7 +136,7 @@ DrSumMcpServer.java
      - 切断
    - 戻り値：メタ情報とサンプルデータ（JSON形式）
 
-2. **execute_query**
+3. **execute_query**
    - パラメータ：sql_query
    - 機能：
      - 環境変数から接続情報を読み取り、Dr.Sumに接続
@@ -325,6 +343,11 @@ DrSumMcpServer.java
 
 **Phase 9 ステータス**: 調査機能実装完了。
 
+#### Phase 10: 不具合修正・Claude Desktopで利用できるように修正
+
+- [x] 原因調査：
+- [x] 各ツールにInputShemaの定義を追加
+- [x] 動作確認
 
 ---
 
@@ -581,27 +604,4 @@ private static McpSchema.Tool createGetMetadataTool() {
         .build();
 }
 ```
-
----
-
-### 【次のステップ】
-
-1. ✅ DrSumEA.jarのAPIドキュメントを確認 **← 完了！**
-2. Phase 1のリファクタリングから開始
-   - 現在のDrSumMcpServerクラスに内部クラスを追加
-   - SOLID原則に従った設計
-3. Phase 2のDr.Sum接続機能実装
-   - ConnectionConfig実装
-   - DrSumConnection実装
-   - configure_connectionツール実装
-4. 小さい単位で実装→テスト→コミットを繰り返す
-
-**推奨実装順序:**
-1. ConnectionConfig → DrSumConnection（Phase 2.1, 2.2）
-2. configure_connectionツール + テスト（Phase 2.3 + Phase 5.1）
-3. DrSumMetadataService（Phase 3.1）
-4. get_metadataツール + テスト（Phase 3.2 + Phase 5.2）
-5. DrSumQueryService（Phase 4.1）
-6. execute_queryツール + テスト（Phase 4.2 + Phase 5.3）
-7. ドキュメント更新（Phase 6）
-  
+ 

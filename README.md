@@ -51,7 +51,7 @@ Dr.Sum接続機能を使用するには、DrSumEA.jarをローカルMavenリポ�
 
 ```powershell
 # Windows (PowerShell)
-.\mvnw.cmd install:install-file "-Dfile=C:\DrSum57\DevKit\java\api\DrSumEA.jar" "-DgroupId=jp.co.dw_sapporo" "-DartifactId=DrSumEA" "-Dversion=5.7.0" "-Dpackaging=jar"
+.\mvnw.cmd install:install-file "-Dfile=path\to\DrSumEA.jar" "-DgroupId=jp.co.dw_sapporo" "-DartifactId=DrSumEA" "-Dversion=5.7.0" "-Dpackaging=jar"
 ```
 
 ```bash
@@ -586,10 +586,3 @@ src/
 - [Model Context Protocol 仕様](https://modelcontextprotocol.org/docs/concepts/architecture)
 - [MCP Java SDK ドキュメント](https://modelcontextprotocol.io/sdk/java/mcp-overview)
 
-## ライセンス
-
-このプロジェクトはMITライセンスの下で公開されています。
-
-## 貢献
-
-プロジェクトへの貢献を歓迎します。プルリクエストやIssueの作成をお願いします。

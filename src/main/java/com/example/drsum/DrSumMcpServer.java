@@ -13,6 +13,8 @@ import jp.co.dw_sapporo.drsum_ea.dbi.DWDbiConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -107,10 +109,21 @@ public class DrSumMcpServer {
      * Connection information is read from environment variables on each call.
      */
     private static McpSchema.Tool createListTablesTool() {
+        // inputSchemaを作成（パラメータなし）
+        McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
+                "object",
+                new HashMap<>(),
+                new ArrayList<>(),
+                null,
+                null,
+                null
+        );
+        
         return McpSchema.Tool.builder()
                 .name("list_tables")
                 .description("Get a list of all tables and views in the Dr.Sum database. " +
                            "No parameters required. Returns table names with type information (table or view).")
+                .inputSchema(inputSchema)
                 .build();
     }
     
@@ -119,11 +132,42 @@ public class DrSumMcpServer {
      * Connection information is read from environment variables on each call.
      */
     private static McpSchema.Tool createGetMetadataTool() {
+        // propertiesを定義
+        Map<String, Object> properties = new HashMap<>();
+        
+        // table_nameプロパティ
+        Map<String, Object> tableNameProp = new HashMap<>();
+        tableNameProp.put("type", "string");
+        tableNameProp.put("description", "Name of the table to get metadata for");
+        properties.put("table_name", tableNameProp);
+        
+        // sample_rowsプロパティ
+        Map<String, Object> sampleRowsProp = new HashMap<>();
+        sampleRowsProp.put("type", "integer");
+        sampleRowsProp.put("description", "Number of sample rows to retrieve");
+        sampleRowsProp.put("default", 3);
+        properties.put("sample_rows", sampleRowsProp);
+        
+        // 必須パラメータ
+        List<String> required = new ArrayList<>();
+        required.add("table_name");
+        
+        // inputSchemaを作成
+        McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
+                "object",
+                properties,
+                required,
+                null,
+                null,
+                null
+        );
+        
         return McpSchema.Tool.builder()
                 .name("get_metadata")
                 .description("Get table metadata with sample data from Dr.Sum. " +
                            "Parameters: table_name (string, required), " +
                            "sample_rows (integer, optional, default=3)")
+                .inputSchema(inputSchema)
                 .build();
     }
     
@@ -132,11 +176,35 @@ public class DrSumMcpServer {
      * Connection information is read from environment variables on each call.
      */
     private static McpSchema.Tool createExecuteQueryTool() {
+        // propertiesを定義
+        Map<String, Object> properties = new HashMap<>();
+        
+        // sql_queryプロパティ
+        Map<String, Object> sqlQueryProp = new HashMap<>();
+        sqlQueryProp.put("type", "string");
+        sqlQueryProp.put("description", "SQL query to execute");
+        properties.put("sql_query", sqlQueryProp);
+        
+        // 必須パラメータ
+        List<String> required = new ArrayList<>();
+        required.add("sql_query");
+        
+        // inputSchemaを作成
+        McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
+                "object",
+                properties,
+                required,
+                null,
+                null,
+                null
+        );
+        
         return McpSchema.Tool.builder()
                 .name("execute_query")
                 .description("Execute a SQL query on Dr.Sum database. " +
                            "Connection is established from environment variables. " +
                            "Parameters: sql_query (string, required)")
+                .inputSchema(inputSchema)
                 .build();
     }
     
@@ -830,7 +898,7 @@ public class DrSumMcpServer {
                     jp.co.dw_sapporo.drsum_ea.dbi.DWDbiCursor cursor = conn.cursor();
                     try {
                         // Use LIMIT clause to get sample data
-                        String sql = String.format("SELECT * FROM \"%s\" LIMIT %d", tableName, sampleRows);
+                        String sql = String.format("SELECT * FROM %s LIMIT %d", tableName, sampleRows);
                         cursor.execute(sql);
                         samples = cursor.fetchmany(sampleRows);
                     } finally {
@@ -866,7 +934,8 @@ public class DrSumMcpServer {
                 json.append("      \"display_name\": \"").append(escapeJson(col.m_sDisplay)).append("\",\n");
                 json.append("      \"type\": ").append(col.m_iType).append(",\n");
                 json.append("      \"type_name\": \"").append(getTypeName(col.m_iType)).append("\",\n");
-                json.append("      \"nullable\": ").append(col.m_iNull != 0).append(",\n");
+                json.append("      \"unique\": ").append(col.m_iUnique != 0).append(",\n");
+                json.append("      \"nullable\": ").append(col.m_iNull == 0).append(",\n");
                 json.append("      \"precision\": ").append(col.m_iPrecision).append(",\n");
                 json.append("      \"scale\": ").append(col.m_iScale).append("\n");
                 json.append("    }");
@@ -916,15 +985,15 @@ public class DrSumMcpServer {
          */
         private String getTypeName(int typeCode) {
             switch (typeCode) {
-                case 1: return "CHAR";
-                case 2: return "INTEGER";
-                case 3: return "DECIMAL";
-                case 4: return "FLOAT";
-                case 5: return "DOUBLE";
-                case 6: return "DATE";
-                case 7: return "TIME";
-                case 8: return "TIMESTAMP";
-                case 12: return "VARCHAR";
+                case 0: return "VARCHAR";
+                case 1: return "INTEGER";
+                case 2: return "REAL";
+                case 3: return "DATE";
+                case 4: return "TIME";
+                case 5: return "TIMESTAMP";
+                case 6: return "OBJECT";
+                case 7: return "NUMERIC";
+                case 12: return "INTERVAL";
                 default: return "UNKNOWN(" + typeCode + ")";
             }
         }

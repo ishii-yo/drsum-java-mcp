@@ -227,7 +227,12 @@ Windows:
         "-q"
       ],
       "env": {
-        "JAVA_HOME": "C:\\java\\jdk-17"
+        "JAVA_HOME": "C:\\java\\jdk-17",
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
       }
     }
   }
@@ -246,7 +251,12 @@ Unix/Linux/macOS:
         "-q"
       ],
       "env": {
-        "JAVA_HOME": "/path/to/jdk-17"
+        "JAVA_HOME": "/path/to/jdk-17",
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
       }
     }
   }
@@ -293,7 +303,14 @@ Unix/Linux/macOS:
       "args": [
         "-jar",
         "C:\\mb_dev\\github\\drsum-java-mcp\\target\\drsum-java-mcp-1.0.0-SNAPSHOT.jar"
-      ]
+      ],
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
+      }
     }
   }
 }
@@ -310,7 +327,14 @@ Windows:
 {
   "mcpServers": {
     "drsum": {
-      "command": "C:\\mb_dev\\github\\drsum-java-mcp\\scripts\\start-server.bat"
+      "command": "C:\\mb_dev\\github\\drsum-java-mcp\\scripts\\start-server.bat",
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
+      }
     }
   }
 }
@@ -321,7 +345,14 @@ Unix/Linux/macOS:
 {
   "mcpServers": {
     "drsum": {
-      "command": "/path/to/drsum-java-mcp/scripts/start-server.sh"
+      "command": "/path/to/drsum-java-mcp/scripts/start-server.sh",
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
+      }
     }
   }
 }
@@ -338,7 +369,7 @@ Unix/Linux/macOS:
 他のMCPクライアント（VS Code拡張機能、カスタムクライアントなど）でも同様の設定が可能です。基本的には：
 - `command`: 実行するコマンド
 - `args`: コマンドの引数
-- `env`: 環境変数（オプション）
+- `env`: 環境変数
 
 を指定します。
 
@@ -350,10 +381,10 @@ Dr.Sumへの接続情報は、MCPクライアント設定の環境変数(`env`)�
 - `DRSUM_HOST`: Dr.Sumサーバーのホスト名またはIPアドレス
 - `DRSUM_PORT`: Dr.Sumサーバーのポート番号
 - `DRSUM_USERNAME`: 認証用ユーザー名
+- `DRSUM_PASSWORD`: 認証用パスワード
 - `DRSUM_DATABASE`: 接続するデータベース名
 
 **オプション環境変数:**
-- `DRSUM_PASSWORD`: 認証用パスワード（未設定または空文字列で認証なし）
 - `DRSUM_SCOPES`: テーブルスコープ定義（JSON形式、オプション）
 
 **テーブルスコープについて:**
@@ -368,26 +399,8 @@ Dr.Sumへの接続情報は、MCPクライアント設定の環境変数(`env`)�
 }
 ```
 
-**設定例（Claude Desktop）:**
-```json
-{
-  "mcpServers": {
-    "drsum": {
-      "command": "java",
-      "args": ["-jar", "path/to/drsum-java-mcp-fat.jar"],
-      "env": {
-        "DRSUM_HOST": "localhost",
-        "DRSUM_PORT": "6001",
-        "DRSUM_USERNAME": "your-id",
-        "DRSUM_PASSWORD": "your-password",
-        "DRSUM_DATABASE": "BUG_DB",
-      }
-    }
-  }
-}
-```
+**設定例:**
 
-**スコープ機能を使用する場合:**
 ```json
 {
   "mcpServers": {

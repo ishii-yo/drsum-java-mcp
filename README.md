@@ -268,9 +268,9 @@ Unix/Linux/macOS:
       "env": {
         "DRSUM_HOST": "localhost",
         "DRSUM_PORT": "6001",
-        "DRSUM_USERNAME": "Administrator",
-        "DRSUM_PASSWORD": "",
-        "DRSUM_DATABASE": "SALES"
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
       }
     }
   }
@@ -354,6 +354,19 @@ Dr.Sumへの接続情報は、MCPクライアント設定の環境変数(`env`)�
 
 **オプション環境変数:**
 - `DRSUM_PASSWORD`: 認証用パスワード（未設定または空文字列で認証なし）
+- `DRSUM_SCOPES`: テーブルスコープ定義（JSON形式、オプション）
+
+**テーブルスコープについて:**
+
+特定の分析用途に応じて、対象とするテーブル・ビューを限定できます。スコープを定義することで、LLMが適切なテーブルのみを対象に分析を行えます。
+
+スコープ定義の形式（JSON）:
+```json
+{
+  "scope_name": ["table1", "table2", "view1"],
+  "another_scope": ["table3", "table4"]
+}
+```
 
 **設定例（Claude Desktop）:**
 ```json
@@ -365,9 +378,29 @@ Dr.Sumへの接続情報は、MCPクライアント設定の環境変数(`env`)�
       "env": {
         "DRSUM_HOST": "localhost",
         "DRSUM_PORT": "6001",
-        "DRSUM_USERNAME": "Administrator",
-        "DRSUM_PASSWORD": "",
-        "DRSUM_DATABASE": "SALES"
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
+      }
+    }
+  }
+}
+```
+
+**スコープ機能を使用する場合:**
+```json
+{
+  "mcpServers": {
+    "drsum": {
+      "command": "java",
+      "args": ["-Dfile.encoding=UTF-8", "-jar", "path/to/drsum-java-mcp-fat.jar"],
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
+        "DRSUM_SCOPES": "{\"bug_analysis\": [\"bug_reports\", \"error_logs\", \"v_bug_trends\"], \"sales_analysis\": [\"orders\", \"customers\", \"v_sales_summary\"]}"
       }
     }
   }
@@ -385,7 +418,7 @@ Dr.Sumへの接続情報は、MCPクライアント設定の環境変数(`env`)�
 データベース内の全てのテーブルとビューの一覧を取得します。
 
 **パラメータ:**
-- なし
+- `scope` (オプション): スコープ名。指定した場合、そのスコープに定義されたテーブル・ビューのみを返します
 
 **レスポンス例:**
 ```json
@@ -408,6 +441,9 @@ Dr.Sumへの接続情報は、MCPクライアント設定の環境変数(`env`)�
 ```
 ユーザー: 「このデータベースにどんなテーブルがありますか？」
 AI: list_tablesツールを呼び出してテーブル一覧を取得し、説明します
+
+ユーザー: 「bug_analysisスコープで不具合の傾向を分析して」
+AI: list_tables(scope="bug_analysis")を呼び出し、スコープに定義されたテーブルのみを対象に分析します
 ```
 
 #### `get_metadata`
@@ -521,9 +557,9 @@ MCP設定ファイルのJava起動引数に `-Dfile.encoding=UTF-8` を追加し
       "env": {
         "DRSUM_HOST": "localhost",
         "DRSUM_PORT": "6001",
-        "DRSUM_USERNAME": "Administrator",
-        "DRSUM_PASSWORD": "",
-        "DRSUM_DATABASE": "SALES"
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
       }
     }
   }

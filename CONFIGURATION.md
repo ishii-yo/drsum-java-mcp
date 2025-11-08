@@ -45,9 +45,78 @@ Dr.Sum接続には以下の環境変数が必要です：
 |---------|------|------|-----|
 | `DRSUM_HOST` | Dr.Sumサーバーのホスト名またはIPアドレス | ✅ | `localhost`, `192.168.1.100` |
 | `DRSUM_PORT` | Dr.Sumサーバーのポート番号 | ✅ | `6001` |
-| `DRSUM_USERNAME` | 認証用ユーザー名 | ✅ | `Administrator` |
-| `DRSUM_PASSWORD` | 認証用パスワード | ⚠️ | 空文字列可 |
+| `DRSUM_USERNAME` | 認証用ユーザー名 | ✅ | `your-id` |
+| `DRSUM_PASSWORD` | 認証用パスワード | ⚠️ | `your-pass` |
 | `DRSUM_DATABASE` | 接続するデータベース名 | ✅ | `SALES` |
+| `DRSUM_SCOPES` | テーブルスコープ定義（JSON形式） | ❌ | 後述 |
+
+## オプション環境変数: テーブルスコープ
+
+### DRSUM_SCOPESとは
+
+特定の分析用途に応じて、対象とするテーブル・ビューを限定できる機能です。スコープを定義することで、LLMが適切なテーブルのみを対象に分析を行えます。
+
+### スコープ定義の形式
+
+JSON形式で複数のスコープを定義できます：
+
+```json
+{
+  "scope_name1": ["table1", "table2", "view1"],
+  "scope_name2": ["table3", "table4"]
+}
+```
+
+### 設定例
+
+```json
+{
+  "mcpServers": {
+    "drsum": {
+      "command": "java",
+      "args": ["-Dfile.encoding=UTF-8", "-jar", "path/to/drsum-java-mcp-fat.jar"],
+      "env": {
+        "DRSUM_HOST": "localhost",
+        "DRSUM_PORT": "6001",
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
+        "DRSUM_SCOPES": "{\"bug_analysis\": [\"bug_reports\", \"error_logs\", \"v_bug_trends\"], \"sales_analysis\": [\"orders\", \"customers\", \"v_sales_summary\"]}"
+      }
+    }
+  }
+}
+```
+
+### 使用方法
+
+スコープを定義すると、`list_tables`ツールでスコープを指定できます：
+
+**スコープなし（全テーブル取得）:**
+```
+ユーザー: 「データベースのテーブル一覧を見せて」
+AI: list_tables() → 全テーブル・ビューを返却
+```
+
+**スコープ指定:**
+```
+ユーザー: 「bug_analysisスコープで不具合の傾向を分析して」
+AI: list_tables(scope="bug_analysis") → bug_reports, error_logs, v_bug_trendsのみ返却
+```
+
+### スコープのメリット
+
+1. **焦点を絞った分析**: 関連するテーブルのみに注目
+2. **パフォーマンス向上**: LLMが処理するテーブル数を削減
+3. **誤用の防止**: 無関係なテーブルを使わないよう制限
+4. **複数用途の管理**: 用途別にスコープを切り替え可能
+
+### 注意事項
+
+- スコープ名の大文字小文字は区別されます
+- テーブル名の大文字小文字は区別されません（自動照合）
+- スコープに存在しないテーブルを指定しても警告のみ（エラーにはならない）
+- `DRSUM_SCOPES`が未設定の場合、スコープ機能は無効（全テーブル対象）
 
 ## MCP Client Configuration
 
@@ -68,9 +137,9 @@ Dr.Sum接続には以下の環境変数が必要です：
       "env": {
         "DRSUM_HOST": "localhost",
         "DRSUM_PORT": "6001",
-        "DRSUM_USERNAME": "Administrator",
-        "DRSUM_PASSWORD": "",
-        "DRSUM_DATABASE": "SALES"
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
       }
     }
   }
@@ -132,9 +201,9 @@ Dr.Sum接続には以下の環境変数が必要です：
       "env": {
         "DRSUM_HOST": "localhost",
         "DRSUM_PORT": "6001",
-        "DRSUM_USERNAME": "Administrator",
-        "DRSUM_PASSWORD": "",
-        "DRSUM_DATABASE": "DEV_SALES"
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "DEV_BUG_DB",
       }
     },
     "drsum-prod": {
@@ -143,9 +212,9 @@ Dr.Sum接続には以下の環境変数が必要です：
       "env": {
         "DRSUM_HOST": "prod-server",
         "DRSUM_PORT": "6001",
-        "DRSUM_USERNAME": "prod_user",
-        "DRSUM_PASSWORD": "password",
-        "DRSUM_DATABASE": "PROD_SALES"
+        "DRSUM_USERNAME": "prod-id",
+        "DRSUM_PASSWORD": "prod-password",
+        "DRSUM_DATABASE": "PROD_BUG_DB",
       }
     }
   }
@@ -258,9 +327,9 @@ MCP設定ファイルの `args` 配列に `-Dfile.encoding=UTF-8` を追加し�
       "env": {
         "DRSUM_HOST": "localhost",
         "DRSUM_PORT": "6001",
-        "DRSUM_USERNAME": "Administrator",
-        "DRSUM_PASSWORD": "",
-        "DRSUM_DATABASE": "SALES"
+        "DRSUM_USERNAME": "your-id",
+        "DRSUM_PASSWORD": "your-password",
+        "DRSUM_DATABASE": "BUG_DB",
       }
     }
   }
@@ -312,6 +381,7 @@ AI: 「受注ビューからデータを5件取得してください」
 
 データベース内のテーブルとビューの一覧を取得：
 
+**全テーブル取得:**
 ```
 ユーザー: 「このデータベースにどんなテーブルがありますか？」
 
@@ -329,6 +399,27 @@ AI: list_tablesツールを呼び出し
   "tables": ["受注", "顧客", "商品"],
   "views": ["受注ビュー", "売上サマリー"],
   "total_count": 5
+}
+```
+
+**スコープを使った取得:**
+```
+ユーザー: 「bug_analysisスコープで不具合の傾向を分析して」
+
+AI: list_tables(scope="bug_analysis")ツールを呼び出し
+    → 環境変数から接続
+    → スコープに定義されたテーブル・ビューのみ取得
+    → 切断
+    → フィルタリングされたテーブルのみを使って分析を実施
+```
+
+**レスポンス例（スコープ適用時）:**
+```json
+{
+  "database": "SALES",
+  "tables": ["bug_reports", "error_logs"],
+  "views": ["v_bug_trends"],
+  "total_count": 3
 }
 ```
 

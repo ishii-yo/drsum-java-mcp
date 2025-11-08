@@ -351,6 +351,82 @@ DrSumMcpServer.java
 
 ---
 
+#### Phase 11: スコープ機能の追加（テーブル・ビューのフィルタリング）
+
+**目的**: 特定の分析用途に応じて、対象とするテーブル・ビューを限定できるようにする
+
+**要件**:
+- ユーザーが「bug_analysisスコープで分析して」と指定すると、事前定義されたテーブル群のみが対象になる
+- スコープ定義は環境変数で設定（柔軟性確保）
+- スコープ指定なしの場合は従来通り全テーブル・ビューを返す（後方互換性）
+
+**実装方針**: 方針A - list_tablesにscopeパラメータを追加
+
+- [x] 11.1 設計と仕様確定
+  - [x] スコープ定義のデータ構造設計（JSON形式）
+  - [x] list_tablesツールのパラメータ仕様更新
+  - [x] フィルタリングロジックの設計
+
+- [x] 11.2 環境変数からのスコープ定義読み込み
+  - [x] DRSUM_SCOPES環境変数の定義
+  - [x] JSON形式でのスコープ定義パース処理
+  - [x] スコープ定義のバリデーション
+  - [x] エラーハンドリング（JSON解析エラー等）
+
+- [x] 11.3 list_tablesツールの拡張
+  - [x] createListTablesTool()にscopeパラメータ追加（optional）
+  - [x] handleListTablesRequest()でscopeパラメータ取得
+  - [x] DrSumMetadataService.getTableList()にスコープフィルタリング機能追加
+  - [x] スコープが存在しない場合のエラーハンドリング
+
+- [x] 11.4 フィルタリングロジックの実装
+  - [x] スコープに定義されたテーブル・ビュー名リストと実際の一覧を照合
+  - [x] 大文字小文字の扱いを考慮
+  - [x] 存在しないテーブルは無視（警告ログ出力）
+
+- [x] 11.5 テスト
+  - [x] スコープ定義の読み込みテスト
+  - [x] フィルタリング動作のテスト（スコープあり・なし）
+  - [x] 存在しないスコープ名指定時のエラーテスト
+  - [x] 既存テストが全て通ることを確認（39テスト全てパス）
+
+- [x] 11.6 ドキュメント更新
+  - [x] README.mdにスコープ機能の説明追加
+    - [x] 環境変数DRSUM_SCOPESの説明
+    - [x] スコープ定義の形式とJSON例
+    - [x] list_tablesツールのscopeパラメータ説明
+    - [x] 使用例の追記
+  - [x] CONFIGURATION.mdにスコープ設定例追加
+    - [x] スコープ定義の詳細説明
+    - [x] 設定例（複数スコープ）
+    - [x] 使用方法とメリット
+    - [x] ツール使用例にスコープ版を追加
+
+**Phase 11 完了**: 全機能実装・テスト・ドキュメント完了 ✅
+
+**実装内容**:
+- ScopeDefinitionsクラス追加（スコープ定義管理）
+- 簡易JSONパーサー実装（外部ライブラリ不要）
+- list_tablesツールにscopeパラメータ追加
+- getTableList()メソッドにフィルタリング機能追加
+- 大文字小文字を区別しない照合処理
+
+**使用例**:
+```bash
+# 環境変数の設定例
+DRSUM_SCOPES={"bug_analysis": ["bug_reports", "error_logs", "v_bug_trends"], "sales_analysis": ["orders", "customers"]}
+
+# ツール呼び出し例
+list_tables()                          → 全テーブル・ビュー返却
+list_tables(scope="bug_analysis")      → bug_reports, error_logs, v_bug_trendsのみ返却
+list_tables(scope="sales_analysis")    → orders, customersのみ返却
+list_tables(scope="unknown_scope")     → エラー
+```
+
+**追加コード量**: 約150行（予想70行を上回ったが、簡易JSONパーサー込み）
+
+---
+
 ### 【実装の優先順位】
 
 1. **最優先**: Phase 2（Dr.Sum接続機能）

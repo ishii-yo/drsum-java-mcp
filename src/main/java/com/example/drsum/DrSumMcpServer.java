@@ -13,6 +13,9 @@ import jp.co.dw_sapporo.drsum_ea.dbi.DWDbiConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -34,6 +37,7 @@ public class DrSumMcpServer {
     private static final String ENV_DRSUM_USERNAME = "DRSUM_USERNAME";
     private static final String ENV_DRSUM_PASSWORD = "DRSUM_PASSWORD";
     private static final String ENV_DRSUM_DATABASE = "DRSUM_DATABASE";
+    private static final String ENV_DRSUM_SCOPES = "DRSUM_SCOPES";
 
     public static void main(String[] args) {
         try {
@@ -109,11 +113,22 @@ public class DrSumMcpServer {
      * Connection information is read from environment variables on each call.
      */
     private static McpSchema.Tool createListTablesTool() {
-        // inputSchemaを作成（パラメータなし）
+        // propertiesを定義
+        Map<String, Object> properties = new HashMap<>();
+        
+        // scopeプロパティ（オプショナル）
+        Map<String, Object> scopeProp = new HashMap<>();
+        scopeProp.put("type", "string");
+        scopeProp.put("description", "Optional scope name to filter tables/views. " +
+                     "If specified, only tables/views defined in the scope will be returned. " +
+                     "If omitted, all tables/views are returned.");
+        properties.put("scope", scopeProp);
+        
+        // inputSchemaを作成（requiredは空 - すべてオプショナル）
         McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
                 "object",
-                new HashMap<>(),
-                new ArrayList<>(),
+                properties,
+                new ArrayList<>(),  // no required parameters
                 null,
                 null,
                 null
@@ -122,7 +137,8 @@ public class DrSumMcpServer {
         return McpSchema.Tool.builder()
                 .name("list_tables")
                 .description("Get a list of all tables and views in the Dr.Sum database. " +
-                           "No parameters required. Returns table names with type information (table or view).")
+                           "No parameters required. Returns table names with type information (table or view). " +
+                           "Optionally accepts a 'scope' parameter to filter results.")
                 .inputSchema(inputSchema)
                 .build();
     }
@@ -221,6 +237,16 @@ public class DrSumMcpServer {
         try {
             logger.info("Processing list_tables request");
             
+            // Extract optional scope parameter
+            Map<String, Object> arguments = request.arguments();
+            String scopeName = arguments.containsKey("scope") 
+                    ? (String) arguments.get("scope") 
+                    : null;
+            
+            if (scopeName != null && !scopeName.trim().isEmpty()) {
+                logger.info("Scope filter requested: {}", scopeName);
+            }
+            
             // Create connection from environment variables
             ConnectionConfig config = ConnectionConfig.fromEnvironment();
             connection = new DrSumConnection();
@@ -228,9 +254,12 @@ public class DrSumMcpServer {
             
             logger.info("Connected to Dr.Sum for table list retrieval");
             
+            // Load scope definitions from environment
+            ScopeDefinitions scopeDefinitions = ScopeDefinitions.fromEnvironment();
+            
             // Create metadata service and retrieve table list
             DrSumMetadataService metadataService = new DrSumMetadataService(connection);
-            String tableList = metadataService.getTableList();
+            String tableList = metadataService.getTableList(scopeName, scopeDefinitions);
             
             // Create success response
             McpSchema.TextContent content = new McpSchema.TextContent(tableList);
@@ -513,6 +542,87 @@ public class DrSumMcpServer {
     }
     
     /**
+     * Scope definition holder.
+     * Manages table/view scopes for filtering.
+     */
+    static class ScopeDefinitions {
+        private final Map<String, List<String>> scopes;
+        
+        public ScopeDefinitions(Map<String, List<String>> scopes) {
+            this.scopes = scopes != null ? scopes : new HashMap<>();
+        }
+        
+        /**
+         * Gets the list of tables/views for a given scope name.
+         * 
+         * @param scopeName Scope name
+         * @return List of table/view names, or null if scope not found
+         */
+        public List<String> getScope(String scopeName) {
+            return scopes.get(scopeName);
+        }
+        
+        /**
+         * Checks if a scope exists.
+         * 
+         * @param scopeName Scope name
+         * @return true if scope exists
+         */
+        public boolean hasScope(String scopeName) {
+            return scopes.containsKey(scopeName);
+        }
+        
+        /**
+         * Gets all scope names.
+         * 
+         * @return Set of scope names
+         */
+        public java.util.Set<String> getScopeNames() {
+            return scopes.keySet();
+        }
+        
+        /**
+         * Reads scope definitions from environment variable.
+         * Expected format: JSON object with scope names as keys and table arrays as values
+         * Example: {"bug_analysis": ["bug_reports", "error_logs"], "sales": ["orders"]}
+         * 
+         * @return ScopeDefinitions instance (empty if not configured)
+         */
+        public static ScopeDefinitions fromEnvironment() {
+            String scopesJson = System.getenv(ENV_DRSUM_SCOPES);
+            
+            if (scopesJson == null || scopesJson.trim().isEmpty()) {
+                logger.info("DRSUM_SCOPES environment variable not set - scope filtering disabled");
+                return new ScopeDefinitions(new HashMap<>());
+            }
+            
+            try {
+                Map<String, List<String>> scopes = parseJsonScopes(scopesJson);
+                logger.info("Loaded {} scope(s) from environment: {}", scopes.size(), scopes.keySet());
+                return new ScopeDefinitions(scopes);
+            } catch (Exception e) {
+                logger.error("Failed to parse DRSUM_SCOPES: {}. Scope filtering disabled.", e.getMessage());
+                return new ScopeDefinitions(new HashMap<>());
+            }
+        }
+        
+        /**
+         * Parses JSON scope definitions using Jackson.
+         * Expected format: {"scope_name": ["table1", "table2"], ...}
+         * 
+         * @param json JSON string to parse
+         * @return Map of scope names to table lists
+         * @throws Exception If JSON parsing fails
+         */
+        private static Map<String, List<String>> parseJsonScopes(String json) throws Exception {
+            ObjectMapper mapper = new ObjectMapper();
+            TypeReference<Map<String, List<String>>> typeRef = 
+                new TypeReference<Map<String, List<String>>>() {};
+            return mapper.readValue(json, typeRef);
+        }
+    }
+    
+    /**
      * Dr.Sum connection manager.
      * Manages connection lifecycle and provides access to DWDbiConnection.
      */
@@ -765,11 +875,14 @@ public class DrSumMcpServer {
         /**
          * Gets list of all tables and views in the database.
          * 
+         * @param scopeName Optional scope name to filter results (can be null)
+         * @param scopeDefinitions Scope definitions for filtering
          * @return JSON string containing table and view information
          * @throws DWException If table list retrieval fails
          * @throws IllegalStateException If not connected
+         * @throws IllegalArgumentException If scope is specified but not found
          */
-        public String getTableList() throws DWException {
+        public String getTableList(String scopeName, ScopeDefinitions scopeDefinitions) throws DWException {
             // Check connection
             if (!dsConnection.isConnected()) {
                 throw new IllegalStateException("Not connected to Dr.Sum. Please configure connection first.");
@@ -779,6 +892,18 @@ public class DrSumMcpServer {
             String dbName = conn.m_sDatabase;
             
             logger.info("Retrieving table list for database: {}", dbName);
+            
+            // Validate scope if specified
+            List<String> scopeFilter = null;
+            if (scopeName != null && !scopeName.trim().isEmpty()) {
+                if (scopeDefinitions == null || !scopeDefinitions.hasScope(scopeName)) {
+                    throw new IllegalArgumentException(
+                        "Scope '" + scopeName + "' not found. Available scopes: " + 
+                        (scopeDefinitions != null ? scopeDefinitions.getScopeNames() : "[]"));
+                }
+                scopeFilter = scopeDefinitions.getScope(scopeName);
+                logger.info("Applying scope filter '{}' with {} table(s)", scopeName, scopeFilter.size());
+            }
             
             try {
                 // Get table list
@@ -796,6 +921,11 @@ public class DrSumMcpServer {
                 for (jp.co.dw_sapporo.drsum_ea.DWTableInfo tableInfo : tableList) {
                     String tableName = tableInfo.m_sName;
                     
+                    // Apply scope filter if specified
+                    if (scopeFilter != null && !isInScope(tableName, scopeFilter)) {
+                        continue;  // Skip tables not in scope
+                    }
+                    
                     // Check if it's a view by getting view info
                     jp.co.dw_sapporo.drsum_ea.DWViewInfo viewInfo = conn.getViewInfo(dbName, tableName);
                     
@@ -806,7 +936,9 @@ public class DrSumMcpServer {
                     }
                 }
                 
-                logger.info("Found {} tables and {} views", tables.size(), views.size());
+                logger.info("Found {} tables and {} views{}", 
+                           tables.size(), views.size(),
+                           scopeName != null ? " (filtered by scope: " + scopeName + ")" : "");
                 
                 // Format as JSON
                 return formatTableListAsJson(dbName, tables, views);
@@ -815,6 +947,31 @@ public class DrSumMcpServer {
                 logger.error("Failed to retrieve table list: {}", e.getMessage());
                 throw e;
             }
+        }
+        
+        /**
+         * Checks if a table name is in the scope filter.
+         * Case-insensitive comparison.
+         */
+        private boolean isInScope(String tableName, List<String> scopeFilter) {
+            for (String scopeTable : scopeFilter) {
+                if (scopeTable.equalsIgnoreCase(tableName)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        /**
+         * Gets list of all tables and views in the database (without scope filtering).
+         * Kept for backward compatibility.
+         * 
+         * @return JSON string containing table and view information
+         * @throws DWException If table list retrieval fails
+         * @throws IllegalStateException If not connected
+         */
+        public String getTableList() throws DWException {
+            return getTableList(null, null);
         }
         
         /**

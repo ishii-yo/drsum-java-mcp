@@ -22,16 +22,24 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Main class for the DrSum MCP Server.
+ * DrSum MCP Server メインクラス
  * 
- * This server implements the Model Context Protocol (MCP) to provide
- * Dr.Sum database analysis capabilities to AI assistants and applications.
+ * このサーバーはModel Context Protocol (MCP)を実装し、
+ * AIアシスタントやアプリケーションにDr.Sumデータベース分析機能を提供します。
+ * 
+ * 【デモ・チュートリアル目的】
+ * このコードは、MCPサーバーの基本的な実装パターンを示すデモです。
+ * 単一ファイル内で以下の要素を含みます：
+ * 1. MCPサーバーの初期化とツール登録
+ * 2. 3つのツール定義（list_tables, get_metadata, execute_query）
+ * 3. オンデマンド接続パターン（接続→処理→切断）
+ * 4. Dr.Sum APIの基本的な使用方法
  */
 public class DrSumMcpServer {
     
     private static final Logger logger = LoggerFactory.getLogger(DrSumMcpServer.class);
     
-    // Environment variable names for Dr.Sum connection
+    // Dr.Sum接続用の環境変数名
     private static final String ENV_DRSUM_HOST = "DRSUM_HOST";
     private static final String ENV_DRSUM_PORT = "DRSUM_PORT";
     private static final String ENV_DRSUM_USERNAME = "DRSUM_USERNAME";
@@ -39,40 +47,50 @@ public class DrSumMcpServer {
     private static final String ENV_DRSUM_DATABASE = "DRSUM_DATABASE";
     private static final String ENV_DRSUM_SCOPES = "DRSUM_SCOPES";
 
+    /**
+     * メインメソッド - MCPサーバーを起動します
+     * 
+     * 処理の流れ:
+     * 1. STDIO通信用のトランスポートを作成
+     * 2. サーバーの機能（capabilities）を定義
+     * 3. 3つのツールを登録
+     * 4. サーバーを起動して待機
+     */
     public static void main(String[] args) {
         try {
-            logger.info("Starting DrSum MCP Server...");
+            logger.info("DrSum MCP Server を起動中...");
             
-            // Create STDIO transport provider for communication
+            // STDIO通信用のトランスポートプロバイダーを作成
             StdioServerTransportProvider transportProvider = new StdioServerTransportProvider(McpJsonMapper.getDefault());
             
-            // Define server capabilities
+            // サーバーの機能を定義
             McpSchema.ServerCapabilities capabilities = McpSchema.ServerCapabilities.builder()
-                    .tools(true) // Enable tools
-                    .prompts(true) // Enable prompts (will return empty list)
-                    .resources(false, false) // Enable resources (will return empty list)
+                    .tools(true) // ツール機能を有効化
+                    .prompts(true) // プロンプト機能を有効化（空リストを返す）
+                    .resources(false, false) // リソース機能を有効化（空リストを返す）
                     .build();
             
-            // Create server info
+            // サーバー情報を作成
             McpSchema.Implementation serverInfo = new McpSchema.Implementation(
                     "drsum-mcp-server", 
                     "1.0.0"
             );
             
-            // Build the server first
+            // サーバーをビルド
             var server = McpServer.sync(transportProvider)
                     .serverInfo(serverInfo)
                     .capabilities(capabilities)
                     .instructions("DrSum MCP Server provides Dr.Sum database analysis capabilities. " +
                                 "Connection information is configured via environment variables " +
                                 "(DRSUM_HOST, DRSUM_PORT, DRSUM_USERNAME, DRSUM_PASSWORD, DRSUM_DATABASE). " +
+                                "DRSUM_SCOPES can be set to define named scopes that group related tables. " +
                                 "Use 'list_tables' to get a list of all tables and views in the database, " +
                                 "use 'get_metadata' to retrieve detailed table information with sample data, " +
                                 "and 'execute_query' to run SQL queries. " +
                                 "Connections are established on-demand for each tool call.")
                     .build();
             
-            // Register tools using the builder pattern (non-deprecated API)
+            // ツールを登録（ビルダーパターンを使用）
             server.addTool(McpServerFeatures.SyncToolSpecification.builder()
                     .tool(createListTablesTool())
                     .callHandler(DrSumMcpServer::handleListTablesRequest)
@@ -88,95 +106,118 @@ public class DrSumMcpServer {
                     .callHandler(DrSumMcpServer::handleExecuteQueryRequest)
                     .build());
             
-            // Note: No prompts or resources are registered, so prompts/list and resources/list will return empty lists
-            // This satisfies the MCP protocol requirement without adding unnecessary functionality
+            // 注: プロンプトとリソースは登録されていないため、空のリストが返されます
+            // これはMCPプロトコルの要件を満たしつつ、不要な機能を追加しない設計です
             
-            logger.info("DrSum MCP Server started successfully");
+            logger.info("DrSum MCP Server が正常に起動しました");
             
-            // Keep the server running
+            // サーバーを実行し続ける
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                logger.info("Shutting down DrSum MCP Server...");
+                logger.info("DrSum MCP Server をシャットダウン中...");
                 transportProvider.closeGracefully().block();
             }));
             
-            // Block main thread to keep server running
+            // メインスレッドをブロックしてサーバーを実行し続ける
             Thread.currentThread().join();
             
         } catch (Exception e) {
-            logger.error("Failed to start DrSum MCP Server", e);
+            logger.error("DrSum MCP Server の起動に失敗しました", e);
             System.exit(1);
         }
     }
     
+    // ========================================================================
+    // ツールスキーマ ヘルパーメソッド
+    // ========================================================================
+    
     /**
-     * Creates the list_tables tool definition.
-     * Connection information is read from environment variables on each call.
+     * ヘルパー: 文字列型のプロパティを作成
+     * ツールパラメータの定義を簡潔にします。
      */
-    private static McpSchema.Tool createListTablesTool() {
-        // propertiesを定義
-        Map<String, Object> properties = new HashMap<>();
-        
-        // scopeプロパティ（オプショナル）
-        Map<String, Object> scopeProp = new HashMap<>();
-        scopeProp.put("type", "string");
-        scopeProp.put("description", "Optional scope name to filter tables/views. " +
-                     "If specified, only tables/views defined in the scope will be returned. " +
-                     "If omitted, all tables/views are returned.");
-        properties.put("scope", scopeProp);
-        
-        // inputSchemaを作成（requiredは空 - すべてオプショナル）
-        McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
+    private static Map<String, Object> createStringProperty(String description) {
+        Map<String, Object> prop = new HashMap<>();
+        prop.put("type", "string");
+        prop.put("description", description);
+        return prop;
+    }
+    
+    /**
+     * ヘルパー: 整数型のプロパティを作成
+     * ツールパラメータの定義を簡潔にします。
+     */
+    private static Map<String, Object> createIntegerProperty(String description, Integer defaultValue) {
+        Map<String, Object> prop = new HashMap<>();
+        prop.put("type", "integer");
+        prop.put("description", description);
+        if (defaultValue != null) {
+            prop.put("default", defaultValue);
+        }
+        return prop;
+    }
+    
+    /**
+     * ヘルパー: プロパティと必須フィールドからJSONスキーマを作成
+     * スキーマ作成ロジックを一元化します。
+     */
+    private static McpSchema.JsonSchema createJsonSchema(Map<String, Object> properties, List<String> required) {
+        return new McpSchema.JsonSchema(
                 "object",
                 properties,
-                new ArrayList<>(),  // no required parameters
+                required != null ? required : new ArrayList<>(),
                 null,
                 null,
                 null
         );
+    }
+    
+    // ========================================================================
+    // ツール定義
+    // ========================================================================
+    
+    /**
+     * list_tables ツールの定義を作成
+     * 
+     * このツールはDr.Sumデータベース内の全テーブルとビューのリストを返します。
+     * 接続情報は各呼び出し時に環境変数から読み込まれます。
+     */
+    private static McpSchema.Tool createListTablesTool() {
+        // パラメータのプロパティを定義
+        Map<String, Object> properties = new HashMap<>();
+        properties.put("scope", createStringProperty(
+            "Optional scope name to filter tables/views. " +
+            "If specified, only tables/views defined in the scope will be returned. " +
+            "If omitted, all tables/views are returned."));
+        
+        // スキーマを作成（必須パラメータなし - すべてオプショナル）
+        McpSchema.JsonSchema inputSchema = createJsonSchema(properties, null);
         
         return McpSchema.Tool.builder()
                 .name("list_tables")
                 .description("Get a list of all tables and views in the Dr.Sum database. " +
-                           "No parameters required. Returns table names with type information (table or view). " +
-                           "Optionally accepts a 'scope' parameter to filter results.")
+                           "Returns table names with type information (table or view). " +
+                           "Optionally accepts a 'scope' parameter to filter results to only tables/views defined in that scope.")
                 .inputSchema(inputSchema)
                 .build();
     }
     
     /**
-     * Creates the get_metadata tool definition.
-     * Connection information is read from environment variables on each call.
+     * get_metadata ツールの定義を作成
+     * 
+     * このツールは指定されたテーブルのメタデータとサンプルデータを返します。
+     * 接続情報は各呼び出し時に環境変数から読み込まれます。
      */
     private static McpSchema.Tool createGetMetadataTool() {
-        // propertiesを定義
+        // パラメータのプロパティを定義
         Map<String, Object> properties = new HashMap<>();
+        properties.put("table_name", createStringProperty("Name of the table to get metadata for"));
+        properties.put("sample_rows", createIntegerProperty("Number of sample rows to retrieve", 3));
         
-        // table_nameプロパティ
-        Map<String, Object> tableNameProp = new HashMap<>();
-        tableNameProp.put("type", "string");
-        tableNameProp.put("description", "Name of the table to get metadata for");
-        properties.put("table_name", tableNameProp);
-        
-        // sample_rowsプロパティ
-        Map<String, Object> sampleRowsProp = new HashMap<>();
-        sampleRowsProp.put("type", "integer");
-        sampleRowsProp.put("description", "Number of sample rows to retrieve");
-        sampleRowsProp.put("default", 3);
-        properties.put("sample_rows", sampleRowsProp);
-        
-        // 必須パラメータ
+        // 必須パラメータを定義
         List<String> required = new ArrayList<>();
         required.add("table_name");
         
-        // inputSchemaを作成
-        McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
-                "object",
-                properties,
-                required,
-                null,
-                null,
-                null
-        );
+        // スキーマを作成
+        McpSchema.JsonSchema inputSchema = createJsonSchema(properties, required);
         
         return McpSchema.Tool.builder()
                 .name("get_metadata")
@@ -188,32 +229,22 @@ public class DrSumMcpServer {
     }
     
     /**
-     * Creates the execute_query tool definition.
-     * Connection information is read from environment variables on each call.
+     * execute_query ツールの定義を作成
+     * 
+     * このツールはDr.SumデータベースでSQLクエリを実行します。
+     * 接続情報は各呼び出し時に環境変数から読み込まれます。
      */
     private static McpSchema.Tool createExecuteQueryTool() {
-        // propertiesを定義
+        // パラメータのプロパティを定義
         Map<String, Object> properties = new HashMap<>();
+        properties.put("sql_query", createStringProperty("SQL query to execute"));
         
-        // sql_queryプロパティ
-        Map<String, Object> sqlQueryProp = new HashMap<>();
-        sqlQueryProp.put("type", "string");
-        sqlQueryProp.put("description", "SQL query to execute");
-        properties.put("sql_query", sqlQueryProp);
-        
-        // 必須パラメータ
+        // 必須パラメータを定義
         List<String> required = new ArrayList<>();
         required.add("sql_query");
         
-        // inputSchemaを作成
-        McpSchema.JsonSchema inputSchema = new McpSchema.JsonSchema(
-                "object",
-                properties,
-                required,
-                null,
-                null,
-                null
-        );
+        // スキーマを作成
+        McpSchema.JsonSchema inputSchema = createJsonSchema(properties, required);
         
         return McpSchema.Tool.builder()
                 .name("execute_query")
@@ -224,198 +255,167 @@ public class DrSumMcpServer {
                 .build();
     }
     
+    // ========================================================================
+    // ツールリクエストハンドラ
+    // ========================================================================
+    
     /**
-     * Handles list_tables tool requests.
-     * Uses on-demand connection pattern: connects, retrieves table list, disconnects.
+     * 共通処理: Dr.Sum接続を使った処理を実行
+     * 
+     * このメソッドは「接続→処理→切断」のパターンを共通化します。
+     * 環境変数から接続情報を読み込み、接続を確立し、処理を実行し、必ず切断します。
+     * 
+     * @param operation 接続を使って実行する処理
+     * @return ツール実行結果
+     */
+    private static McpSchema.CallToolResult executeWithConnection(
+            java.util.function.Function<DrSumConnection, String> operation) {
+        
+        DrSumConnection connection = null;
+        
+        try {
+            // 環境変数から接続設定を作成
+            ConnectionConfig config = ConnectionConfig.fromEnvironment();
+            connection = new DrSumConnection();
+            connection.connect(config);
+            
+            logger.info("Dr.Sumに接続しました");
+            
+            // 処理を実行
+            String result = operation.apply(connection);
+            
+            // 成功レスポンスを作成
+            McpSchema.TextContent content = new McpSchema.TextContent(result);
+            logger.info("処理が正常に完了しました");
+            return McpSchema.CallToolResult.builder().content(List.of(content)).build();
+            
+        } catch (DWException e) {
+            logger.error("Dr.Sumエラー: {}", e.getMessage());
+            return createErrorResult("Dr.Sum処理に失敗しました: " + e.getMessage());
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            logger.error("無効なリクエスト: {}", e.getMessage());
+            return createErrorResult(e.getMessage());
+        } catch (Exception e) {
+            logger.error("リクエスト処理エラー", e);
+            return createErrorResult("内部エラー: " + e.getMessage());
+        } finally {
+            // 必ず切断
+            if (connection != null && connection.isConnected()) {
+                try {
+                    connection.disconnect();
+                    logger.info("Dr.Sumから切断しました");
+                } catch (DWException e) {
+                    logger.error("切断エラー: {}", e.getMessage());
+                }
+            }
+        }
+    }
+    
+    /**
+     * list_tables ツールのリクエストを処理
+     * 
+     * オンデマンド接続パターン: 接続→テーブルリスト取得→切断
      */
     private static McpSchema.CallToolResult handleListTablesRequest(
             McpSyncServerExchange exchange, 
             McpSchema.CallToolRequest request) {
         
-        DrSumConnection connection = null;
+        logger.info("list_tables リクエストを処理中");
         
-        try {
-            logger.info("Processing list_tables request");
-            
-            // Extract optional scope parameter
-            Map<String, Object> arguments = request.arguments();
-            String scopeName = arguments.containsKey("scope") 
-                    ? (String) arguments.get("scope") 
-                    : null;
-            
-            if (scopeName != null && !scopeName.trim().isEmpty()) {
-                logger.info("Scope filter requested: {}", scopeName);
-            }
-            
-            // Create connection from environment variables
-            ConnectionConfig config = ConnectionConfig.fromEnvironment();
-            connection = new DrSumConnection();
-            connection.connect(config);
-            
-            logger.info("Connected to Dr.Sum for table list retrieval");
-            
-            // Load scope definitions from environment
-            ScopeDefinitions scopeDefinitions = ScopeDefinitions.fromEnvironment();
-            
-            // Create metadata service and retrieve table list
-            DrSumMetadataService metadataService = new DrSumMetadataService(connection);
-            String tableList = metadataService.getTableList(scopeName, scopeDefinitions);
-            
-            // Create success response
-            McpSchema.TextContent content = new McpSchema.TextContent(tableList);
-            
-            logger.info("Successfully processed list_tables request");
-            return McpSchema.CallToolResult.builder().content(List.of(content)).build();
-            
-        } catch (DWException e) {
-            logger.error("Dr.Sum table list retrieval error: {}", e.getMessage());
-            return createErrorResult("Failed to retrieve table list: " + e.getMessage());
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            logger.error("Invalid request: {}", e.getMessage());
-            return createErrorResult(e.getMessage());
-        } catch (Exception e) {
-            logger.error("Error processing list_tables request", e);
-            return createErrorResult("Internal error: " + e.getMessage());
-        } finally {
-            // Always disconnect
-            if (connection != null && connection.isConnected()) {
-                try {
-                    connection.disconnect();
-                    logger.info("Disconnected from Dr.Sum after table list retrieval");
-                } catch (DWException e) {
-                    logger.error("Error disconnecting from Dr.Sum: {}", e.getMessage());
-                }
-            }
+        // オプショナルなscopeパラメータを抽出
+        Map<String, Object> arguments = request.arguments();
+        String scopeName = arguments.containsKey("scope") 
+                ? (String) arguments.get("scope") 
+                : null;
+        
+        if (scopeName != null && !scopeName.trim().isEmpty()) {
+            logger.info("スコープフィルタが指定されました: {}", scopeName);
         }
+        
+        // 共通接続処理を使って実行
+        return executeWithConnection(connection -> {
+            try {
+                // 環境変数からスコープ定義を読み込み
+                ScopeDefinitions scopeDefinitions = ScopeDefinitions.fromEnvironment();
+                
+                // メタデータサービスを作成してテーブルリストを取得
+                DrSumMetadataService metadataService = new DrSumMetadataService(connection);
+                return metadataService.getTableList(scopeName, scopeDefinitions);
+            } catch (DWException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
     
     /**
-     * Handles get_metadata tool requests.
-     * Uses on-demand connection pattern: connects, retrieves metadata, disconnects.
+     * get_metadata ツールのリクエストを処理
+     * 
+     * オンデマンド接続パターン: 接続→メタデータ取得→切断
      */
     private static McpSchema.CallToolResult handleGetMetadataRequest(
             McpSyncServerExchange exchange, 
             McpSchema.CallToolRequest request) {
         
-        DrSumConnection connection = null;
+        logger.info("get_metadata リクエストを処理中");
         
-        try {
-            logger.info("Processing get_metadata request");
-            
-            // Extract parameters from request
-            Map<String, Object> arguments = request.arguments();
-            String tableName = (String) arguments.get("table_name");
-            Integer sampleRows = arguments.containsKey("sample_rows") 
-                    ? ((Number) arguments.get("sample_rows")).intValue() 
-                    : DEFAULT_SAMPLE_ROWS;
-            
-            // Validate parameters
-            if (tableName == null || tableName.trim().isEmpty()) {
-                return createErrorResult("table_name parameter is required");
-            }
-            
-            // Create connection from environment variables
-            ConnectionConfig config = ConnectionConfig.fromEnvironment();
-            connection = new DrSumConnection();
-            connection.connect(config);
-            
-            logger.info("Connected to Dr.Sum for metadata retrieval");
-            
-            // Create metadata service and retrieve metadata
-            DrSumMetadataService metadataService = new DrSumMetadataService(connection);
-            String metadata = metadataService.getTableMetadata(tableName, sampleRows);
-            
-            // Create success response
-            McpSchema.TextContent content = new McpSchema.TextContent(metadata);
-            
-            logger.info("Successfully processed get_metadata request for table: {}", tableName);
-            return McpSchema.CallToolResult.builder().content(List.of(content)).build();
-            
-        } catch (DWException e) {
-            logger.error("Dr.Sum metadata retrieval error: {}", e.getMessage());
-            return createErrorResult("Failed to retrieve metadata: " + e.getMessage());
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            logger.error("Invalid request: {}", e.getMessage());
-            return createErrorResult(e.getMessage());
-        } catch (Exception e) {
-            logger.error("Error processing get_metadata request", e);
-            return createErrorResult("Internal error: " + e.getMessage());
-        } finally {
-            // Always disconnect
-            if (connection != null && connection.isConnected()) {
-                try {
-                    connection.disconnect();
-                    logger.info("Disconnected from Dr.Sum after metadata retrieval");
-                } catch (DWException e) {
-                    logger.error("Error disconnecting from Dr.Sum: {}", e.getMessage());
-                }
-            }
+        // リクエストからパラメータを抽出
+        Map<String, Object> arguments = request.arguments();
+        String tableName = (String) arguments.get("table_name");
+        Integer sampleRows = arguments.containsKey("sample_rows") 
+                ? ((Number) arguments.get("sample_rows")).intValue() 
+                : DEFAULT_SAMPLE_ROWS;
+        
+        // パラメータを検証
+        if (tableName == null || tableName.trim().isEmpty()) {
+            return createErrorResult("table_name パラメータは必須です");
         }
+        
+        // 共通接続処理を使って実行
+        return executeWithConnection(connection -> {
+            try {
+                // メタデータサービスを作成してメタデータを取得
+                DrSumMetadataService metadataService = new DrSumMetadataService(connection);
+                return metadataService.getTableMetadata(tableName, sampleRows);
+            } catch (DWException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
     
     /**
-     * Handles execute_query tool requests.
-     * Uses on-demand connection pattern: connects, executes query, disconnects.
+     * execute_query ツールのリクエストを処理
+     * 
+     * オンデマンド接続パターン: 接続→クエリ実行→切断
      */
     private static McpSchema.CallToolResult handleExecuteQueryRequest(
             McpSyncServerExchange exchange, 
             McpSchema.CallToolRequest request) {
         
-        DrSumConnection connection = null;
+        logger.info("execute_query リクエストを処理中");
         
-        try {
-            logger.info("Processing execute_query request");
-            
-            // Extract parameters from request
-            Map<String, Object> arguments = request.arguments();
-            String sqlQuery = (String) arguments.get("sql_query");
-            
-            // Validate parameters
-            if (sqlQuery == null || sqlQuery.trim().isEmpty()) {
-                return createErrorResult("sql_query parameter is required");
-            }
-            
-            // Create connection from environment variables
-            ConnectionConfig config = ConnectionConfig.fromEnvironment();
-            connection = new DrSumConnection();
-            connection.connect(config);
-            
-            logger.info("Connected to Dr.Sum for query execution");
-            
-            // Create query service and execute query
-            DrSumQueryService queryService = new DrSumQueryService(connection);
-            String results = queryService.executeQuery(sqlQuery);
-            
-            // Create success response
-            McpSchema.TextContent content = new McpSchema.TextContent(results);
-            
-            logger.info("Successfully processed execute_query request");
-            return McpSchema.CallToolResult.builder().content(List.of(content)).build();
-            
-        } catch (DWException e) {
-            logger.error("Dr.Sum query execution error: {}", e.getMessage());
-            return createErrorResult("Failed to execute query: " + e.getMessage());
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            logger.error("Invalid request: {}", e.getMessage());
-            return createErrorResult(e.getMessage());
-        } catch (Exception e) {
-            logger.error("Error processing execute_query request", e);
-            return createErrorResult("Internal error: " + e.getMessage());
-        } finally {
-            // Always disconnect
-            if (connection != null && connection.isConnected()) {
-                try {
-                    connection.disconnect();
-                    logger.info("Disconnected from Dr.Sum after query execution");
-                } catch (DWException e) {
-                    logger.error("Error disconnecting from Dr.Sum: {}", e.getMessage());
-                }
-            }
+        // リクエストからパラメータを抽出
+        Map<String, Object> arguments = request.arguments();
+        String sqlQuery = (String) arguments.get("sql_query");
+        
+        // パラメータを検証
+        if (sqlQuery == null || sqlQuery.trim().isEmpty()) {
+            return createErrorResult("sql_query パラメータは必須です");
         }
+        
+        // 共通接続処理を使って実行
+        return executeWithConnection(connection -> {
+            try {
+                // クエリサービスを作成してクエリを実行
+                DrSumQueryService queryService = new DrSumQueryService(connection);
+                return queryService.executeQuery(sqlQuery);
+            } catch (DWException e) {
+                throw new RuntimeException(e);
+            }
+        });
     }
     
     /**
-     * Creates an error result.
+     * エラー結果を作成
      */
     private static McpSchema.CallToolResult createErrorResult(String errorMessage) {
         McpSchema.TextContent errorContent = new McpSchema.TextContent(
@@ -428,38 +428,66 @@ public class DrSumMcpServer {
     }
     
     // ========================================================================
-    // Inner Classes - Dr.Sum Connection Management
+    // ユーティリティメソッド
     // ========================================================================
     
     /**
-     * Default number of sample rows to fetch with metadata.
+     * JSON用に文字列をエスケープ
+     * 
+     * 特殊文字をエスケープしてJSON文字列として安全に使用できるようにします。
+     * DrSumQueryServiceとDrSumMetadataServiceで共通利用されます。
+     */
+    private static String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\")
+                   .replace("\"", "\\\"")
+                   .replace("\n", "\\n")
+                   .replace("\r", "\\r")
+                   .replace("\t", "\\t");
+    }
+    
+    // ========================================================================
+    // 内部クラス - Dr.Sum接続管理
+    // ========================================================================
+    
+    /**
+     * デフォルトのサンプル行数
      */
     private static final int DEFAULT_SAMPLE_ROWS = 3;
     
     /**
-     * Dr.Sum connection configuration holder.
-     * Stores connection information with password obfuscation for logging.
+     * Dr.Sum接続設定クラス
+     * 
+     * 接続情報を保持します。パスワードはログ出力時に伏せ字化されます。
+     * 
+     * 【デモ・チュートリアルポイント】
+     * - 環境変数から設定を読み込むパターンの実装例
+     * - セキュリティ: パスワードの伏せ字化
+     * - バリデーション: 必須パラメータのチェック
      */
     static class ConnectionConfig {
         private final String host;
         private final int port;
         private final String username;
-        private final String password;  // Sensitive information
+        private final String password;  // 機密情報
         private final String database;
         
         public ConnectionConfig(String host, int port, String username, 
                               String password, String database) {
+            // パラメータのバリデーション
             if (host == null || host.trim().isEmpty()) {
-                throw new IllegalArgumentException("Host cannot be null or empty");
+                throw new IllegalArgumentException("ホストはnullまたは空にできません");
             }
             if (port <= 0 || port > 65535) {
-                throw new IllegalArgumentException("Port must be between 1 and 65535");
+                throw new IllegalArgumentException("ポートは1から65535の間である必要があります");
             }
             if (username == null || username.trim().isEmpty()) {
-                throw new IllegalArgumentException("Username cannot be null or empty");
+                throw new IllegalArgumentException("ユーザー名はnullまたは空にできません");
             }
             if (database == null || database.trim().isEmpty()) {
-                throw new IllegalArgumentException("Database cannot be null or empty");
+                throw new IllegalArgumentException("データベース名はnullまたは空にできません");
             }
             
             this.host = host;
@@ -477,64 +505,64 @@ public class DrSumMcpServer {
         
         @Override
         public String toString() {
-            // Obfuscate password for logging
+            // ログ出力用にパスワードを伏せ字化
             return String.format("ConnectionConfig{host='%s', port=%d, username='%s', password=****, database='%s'}",
                                host, port, username, database);
         }
         
         /**
-         * Creates ConnectionConfig from environment variables.
+         * 環境変数からConnectionConfigを作成
          * 
-         * @return ConnectionConfig created from environment variables
-         * @throws IllegalStateException if required environment variables are not set
+         * @return 環境変数から作成されたConnectionConfig
+         * @throws IllegalStateException 必須の環境変数が設定されていない場合
          */
         public static ConnectionConfig fromEnvironment() {
-            logger.info("Reading Dr.Sum connection information from environment variables");
+            logger.info("環境変数からDr.Sum接続情報を読み込み中");
             
-            // Read environment variables
+            // 環境変数を読み込み
             String host = System.getenv(ENV_DRSUM_HOST);
             String portStr = System.getenv(ENV_DRSUM_PORT);
             String username = System.getenv(ENV_DRSUM_USERNAME);
             String password = System.getenv(ENV_DRSUM_PASSWORD);
             String database = System.getenv(ENV_DRSUM_DATABASE);
             
-            // Validate required environment variables
+            // 必須の環境変数を検証
             if (host == null || host.trim().isEmpty()) {
                 throw new IllegalStateException(
-                    "Environment variable " + ENV_DRSUM_HOST + " is not set. " +
-                    "Please configure Dr.Sum connection information in MCP settings.");
+                    "環境変数 " + ENV_DRSUM_HOST + " が設定されていません。" +
+                    "MCP設定でDr.Sumの接続情報を設定してください。");
             }
             if (portStr == null || portStr.trim().isEmpty()) {
                 throw new IllegalStateException(
-                    "Environment variable " + ENV_DRSUM_PORT + " is not set. " +
-                    "Please configure Dr.Sum connection information in MCP settings.");
+                    "環境変数 " + ENV_DRSUM_PORT + " が設定されていません。" +
+                    "MCP設定でDr.Sumの接続情報を設定してください。");
             }
             if (username == null || username.trim().isEmpty()) {
                 throw new IllegalStateException(
-                    "Environment variable " + ENV_DRSUM_USERNAME + " is not set. " +
-                    "Please configure Dr.Sum connection information in MCP settings.");
+                    "環境変数 " + ENV_DRSUM_USERNAME + " が設定されていません。" +
+                    "MCP設定でDr.Sumの接続情報を設定してください。");
             }
             if (database == null || database.trim().isEmpty()) {
                 throw new IllegalStateException(
-                    "Environment variable " + ENV_DRSUM_DATABASE + " is not set. " +
-                    "Please configure Dr.Sum connection information in MCP settings.");
+                    "環境変数 " + ENV_DRSUM_DATABASE + " が設定されていません。" +
+                    "MCP設定でDr.Sumの接続情報を設定してください。");
             }
             
-            // Parse port number
+            // ポート番号をパース
             int port;
             try {
                 port = Integer.parseInt(portStr);
             } catch (NumberFormatException e) {
                 throw new IllegalStateException(
-                    "Environment variable " + ENV_DRSUM_PORT + " must be a valid integer. Got: " + portStr);
+                    "環境変数 " + ENV_DRSUM_PORT + " は有効な整数である必要があります。取得値: " + portStr);
             }
             
-            // Password can be empty
+            // パスワードは空でも可
             if (password == null) {
                 password = "";
             }
             
-            logger.info("Successfully read connection information from environment (host={}, port={}, username={}, database={})",
+            logger.info("環境変数からの接続情報読み込み成功 (host={}, port={}, username={}, database={})",
                        host, port, username, database);
             
             return new ConnectionConfig(host, port, username, password, database);
@@ -542,8 +570,13 @@ public class DrSumMcpServer {
     }
     
     /**
-     * Scope definition holder.
-     * Manages table/view scopes for filtering.
+     * スコープ定義クラス
+     * 
+     * テーブル/ビューのスコープによるフィルタリングを管理します。
+     * 
+     * 【デモ・チュートリアルポイント】
+     * - JSON設定の読み込みパターン
+     * - オプショナル機能の実装方法（スコープが未設定でも動作）
      */
     static class ScopeDefinitions {
         private final Map<String, List<String>> scopes;
@@ -797,8 +830,8 @@ public class DrSumMcpServer {
             for (int i = 0; i < schema.length; i++) {
                 jp.co.dw_sapporo.drsum_ea.DWColumnInfo col = schema[i];
                 json.append("    {");
-                json.append("\"name\": \"").append(escapeJson(col.m_sName)).append("\", ");
-                json.append("\"display_name\": \"").append(escapeJson(col.m_sDisplay)).append("\", ");
+                json.append("\"name\": \"").append(DrSumMcpServer.escapeJson(col.m_sName)).append("\", ");
+                json.append("\"display_name\": \"").append(DrSumMcpServer.escapeJson(col.m_sDisplay)).append("\", ");
                 json.append("\"type\": ").append(col.m_iType);
                 json.append("}");
                 if (i < schema.length - 1) {
@@ -819,7 +852,7 @@ public class DrSumMcpServer {
                         if (value == null) {
                             json.append("null");
                         } else {
-                            json.append("\"").append(escapeJson(value)).append("\"");
+                            json.append("\"").append(DrSumMcpServer.escapeJson(value)).append("\"");
                         }
                         if (j < row.size() - 1) {
                             json.append(", ");
@@ -838,29 +871,16 @@ public class DrSumMcpServer {
             
             return json.toString();
         }
-        
-        /**
-         * Escapes special characters for JSON.
-         */
-        private String escapeJson(String value) {
-            if (value == null) {
-                return "";
-            }
-            return value.replace("\\", "\\\\")
-                       .replace("\"", "\\\"")
-                       .replace("\n", "\\n")
-                       .replace("\r", "\\r")
-                       .replace("\t", "\\t");
-        }
     }
     
     // ========================================================================
-    // Inner Classes - Dr.Sum Metadata Service
+    // 内部クラス - Dr.Sumメタデータサービス
     // ========================================================================
     
     /**
-     * Dr.Sum metadata service.
-     * Retrieves table metadata and sample data.
+     * Dr.Sumメタデータサービス
+     * 
+     * テーブルのメタデータとサンプルデータを取得します。
      */
     static class DrSumMetadataService {
         private final DrSumConnection dsConnection;
@@ -911,7 +931,7 @@ public class DrSumMcpServer {
                 
                 if (tableList == null || tableList.length == 0) {
                     logger.warn("No tables found in database: {}", dbName);
-                    return "{\"database\": \"" + escapeJson(dbName) + "\", \"tables\": [], \"views\": []}";
+                    return "{\"database\": \"" + DrSumMcpServer.escapeJson(dbName) + "\", \"tables\": [], \"views\": []}";
                 }
                 
                 // Separate tables and views
@@ -982,12 +1002,12 @@ public class DrSumMcpServer {
                                             java.util.List<String> views) {
             StringBuilder json = new StringBuilder();
             json.append("{\n");
-            json.append("  \"database\": \"").append(escapeJson(dbName)).append("\",\n");
+            json.append("  \"database\": \"").append(DrSumMcpServer.escapeJson(dbName)).append("\",\n");
             
             // Format tables
             json.append("  \"tables\": [\n");
             for (int i = 0; i < tables.size(); i++) {
-                json.append("    \"").append(escapeJson(tables.get(i))).append("\"");
+                json.append("    \"").append(DrSumMcpServer.escapeJson(tables.get(i))).append("\"");
                 if (i < tables.size() - 1) {
                     json.append(",");
                 }
@@ -998,7 +1018,7 @@ public class DrSumMcpServer {
             // Format views
             json.append("  \"views\": [\n");
             for (int i = 0; i < views.size(); i++) {
-                json.append("    \"").append(escapeJson(views.get(i))).append("\"");
+                json.append("    \"").append(DrSumMcpServer.escapeJson(views.get(i))).append("\"");
                 if (i < views.size() - 1) {
                     json.append(",");
                 }
@@ -1080,15 +1100,15 @@ public class DrSumMcpServer {
                                           java.util.Vector<java.util.Vector<String>> samples) {
             StringBuilder json = new StringBuilder();
             json.append("{\n");
-            json.append("  \"table\": \"").append(escapeJson(tableName)).append("\",\n");
+            json.append("  \"table\": \"").append(DrSumMcpServer.escapeJson(tableName)).append("\",\n");
             json.append("  \"columns\": [\n");
             
             // Format columns
             for (int i = 0; i < schema.length; i++) {
                 jp.co.dw_sapporo.drsum_ea.DWColumnInfo col = schema[i];
                 json.append("    {\n");
-                json.append("      \"name\": \"").append(escapeJson(col.m_sName)).append("\",\n");
-                json.append("      \"display_name\": \"").append(escapeJson(col.m_sDisplay)).append("\",\n");
+                json.append("      \"name\": \"").append(DrSumMcpServer.escapeJson(col.m_sName)).append("\",\n");
+                json.append("      \"display_name\": \"").append(DrSumMcpServer.escapeJson(col.m_sDisplay)).append("\",\n");
                 json.append("      \"type\": ").append(col.m_iType).append(",\n");
                 json.append("      \"type_name\": \"").append(getTypeName(col.m_iType)).append("\",\n");
                 json.append("      \"unique\": ").append(col.m_iUnique != 0).append(",\n");
@@ -1116,7 +1136,7 @@ public class DrSumMcpServer {
                         if (value == null) {
                             json.append("null");
                         } else {
-                            json.append("\"").append(escapeJson(value)).append("\"");
+                            json.append("\"").append(DrSumMcpServer.escapeJson(value)).append("\"");
                         }
                         if (j < row.size() - 1) {
                             json.append(", ");
@@ -1153,20 +1173,6 @@ public class DrSumMcpServer {
                 case 12: return "INTERVAL";
                 default: return "UNKNOWN(" + typeCode + ")";
             }
-        }
-        
-        /**
-         * Escapes special characters for JSON.
-         */
-        private String escapeJson(String value) {
-            if (value == null) {
-                return "";
-            }
-            return value.replace("\\", "\\\\")
-                       .replace("\"", "\\\"")
-                       .replace("\n", "\\n")
-                       .replace("\r", "\\r")
-                       .replace("\t", "\\t");
         }
     }
 }

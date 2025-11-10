@@ -7,6 +7,12 @@ import org.junit.jupiter.api.DisplayName;
 
 import jp.co.dw_sapporo.drsum_ea.DWException;
 
+import com.example.drsum.connection.ConnectionConfig;
+import com.example.drsum.connection.DrSumConnection;
+import com.example.drsum.connection.ScopeDefinitions;
+import com.example.drsum.service.DrSumQueryService;
+import com.example.drsum.service.DrSumMetadataService;
+
 import java.util.Map;
 import java.util.List;
 
@@ -17,20 +23,20 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class DrSumMcpServerTest {
 
-    private DrSumMcpServer.ConnectionConfig validConfig;
-    private DrSumMcpServer.DrSumConnection connection;
+    private ConnectionConfig validConfig;
+    private DrSumConnection connection;
 
     @BeforeEach
     void setUp() {
         // Create a valid configuration for testing
-        validConfig = new DrSumMcpServer.ConnectionConfig(
+        validConfig = new ConnectionConfig(
             "localhost",
             6001,
             "Administrator",
             "",
             "SALES"
         );
-        connection = new DrSumMcpServer.DrSumConnection();
+        connection = new DrSumConnection();
     }
 
     // ========================================================================
@@ -51,7 +57,7 @@ class DrSumMcpServerTest {
     @Test
     @DisplayName("ConnectionConfig should handle empty password")
     void testConnectionConfig_EmptyPassword() {
-        DrSumMcpServer.ConnectionConfig config = new DrSumMcpServer.ConnectionConfig(
+        ConnectionConfig config = new ConnectionConfig(
             "localhost", 6001, "user", "", "db"
         );
         assertEquals("", config.getPassword());
@@ -60,7 +66,7 @@ class DrSumMcpServerTest {
     @Test
     @DisplayName("ConnectionConfig should handle null password as empty string")
     void testConnectionConfig_NullPassword() {
-        DrSumMcpServer.ConnectionConfig config = new DrSumMcpServer.ConnectionConfig(
+        ConnectionConfig config = new ConnectionConfig(
             "localhost", 6001, "user", null, "db"
         );
         assertEquals("", config.getPassword());
@@ -70,7 +76,7 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for null host")
     void testConnectionConfig_NullHost() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig(null, 6001, "user", "pass", "db");
+            new ConnectionConfig(null, 6001, "user", "pass", "db");
         });
     }
 
@@ -78,7 +84,7 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for empty host")
     void testConnectionConfig_EmptyHost() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig("", 6001, "user", "pass", "db");
+            new ConnectionConfig("", 6001, "user", "pass", "db");
         });
     }
 
@@ -86,7 +92,7 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for invalid port (0)")
     void testConnectionConfig_InvalidPortZero() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig("localhost", 0, "user", "pass", "db");
+            new ConnectionConfig("localhost", 0, "user", "pass", "db");
         });
     }
 
@@ -94,7 +100,7 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for invalid port (negative)")
     void testConnectionConfig_InvalidPortNegative() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig("localhost", -1, "user", "pass", "db");
+            new ConnectionConfig("localhost", -1, "user", "pass", "db");
         });
     }
 
@@ -102,7 +108,7 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for invalid port (> 65535)")
     void testConnectionConfig_InvalidPortTooLarge() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig("localhost", 65536, "user", "pass", "db");
+            new ConnectionConfig("localhost", 65536, "user", "pass", "db");
         });
     }
 
@@ -110,7 +116,7 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for null username")
     void testConnectionConfig_NullUsername() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig("localhost", 6001, null, "pass", "db");
+            new ConnectionConfig("localhost", 6001, null, "pass", "db");
         });
     }
 
@@ -118,7 +124,7 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for empty username")
     void testConnectionConfig_EmptyUsername() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig("localhost", 6001, "", "pass", "db");
+            new ConnectionConfig("localhost", 6001, "", "pass", "db");
         });
     }
 
@@ -126,7 +132,7 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for null database")
     void testConnectionConfig_NullDatabase() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig("localhost", 6001, "user", "pass", null);
+            new ConnectionConfig("localhost", 6001, "user", "pass", null);
         });
     }
 
@@ -134,14 +140,14 @@ class DrSumMcpServerTest {
     @DisplayName("ConnectionConfig should throw exception for empty database")
     void testConnectionConfig_EmptyDatabase() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.ConnectionConfig("localhost", 6001, "user", "pass", "");
+            new ConnectionConfig("localhost", 6001, "user", "pass", "");
         });
     }
 
     @Test
     @DisplayName("ConnectionConfig toString should obfuscate password")
     void testConnectionConfig_PasswordObfuscation() {
-        DrSumMcpServer.ConnectionConfig config = new DrSumMcpServer.ConnectionConfig(
+        ConnectionConfig config = new ConnectionConfig(
             "localhost", 6001, "user", "secretPassword", "db"
         );
         String configString = config.toString();
@@ -203,15 +209,15 @@ class DrSumMcpServerTest {
     @DisplayName("DrSumMetadataService should throw exception with null connection")
     void testMetadataService_NullConnection() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.DrSumMetadataService(null);
+            new DrSumMetadataService(null);
         });
     }
 
     @Test
     @DisplayName("DrSumMetadataService should throw exception when not connected")
     void testMetadataService_NotConnected() {
-        DrSumMcpServer.DrSumMetadataService service = 
-            new DrSumMcpServer.DrSumMetadataService(connection);
+        DrSumMetadataService service = 
+            new DrSumMetadataService(connection);
         
         assertThrows(IllegalStateException.class, () -> {
             service.getTableMetadata("test_table", 3);
@@ -221,8 +227,8 @@ class DrSumMcpServerTest {
     @Test
     @DisplayName("DrSumMetadataService should throw exception for null table name")
     void testMetadataService_NullTableName() {
-        DrSumMcpServer.DrSumMetadataService service = 
-            new DrSumMcpServer.DrSumMetadataService(connection);
+        DrSumMetadataService service = 
+            new DrSumMetadataService(connection);
         
         assertThrows(IllegalArgumentException.class, () -> {
             service.getTableMetadata(null, 3);
@@ -232,8 +238,8 @@ class DrSumMcpServerTest {
     @Test
     @DisplayName("DrSumMetadataService should throw exception for empty table name")
     void testMetadataService_EmptyTableName() {
-        DrSumMcpServer.DrSumMetadataService service = 
-            new DrSumMcpServer.DrSumMetadataService(connection);
+        DrSumMetadataService service = 
+            new DrSumMetadataService(connection);
         
         assertThrows(IllegalArgumentException.class, () -> {
             service.getTableMetadata("", 3);
@@ -243,8 +249,8 @@ class DrSumMcpServerTest {
     @Test
     @DisplayName("DrSumMetadataService should throw exception for negative sample rows")
     void testMetadataService_NegativeSampleRows() {
-        DrSumMcpServer.DrSumMetadataService service = 
-            new DrSumMcpServer.DrSumMetadataService(connection);
+        DrSumMetadataService service = 
+            new DrSumMetadataService(connection);
         
         assertThrows(IllegalArgumentException.class, () -> {
             service.getTableMetadata("test_table", -1);
@@ -254,8 +260,8 @@ class DrSumMcpServerTest {
     @Test
     @DisplayName("DrSumMetadataService should accept zero sample rows")
     void testMetadataService_ZeroSampleRows() {
-        DrSumMcpServer.DrSumMetadataService service = 
-            new DrSumMcpServer.DrSumMetadataService(connection);
+        DrSumMetadataService service = 
+            new DrSumMetadataService(connection);
         
         // Should not throw exception with 0 rows (validation only)
         assertDoesNotThrow(() -> {
@@ -276,15 +282,15 @@ class DrSumMcpServerTest {
     @DisplayName("DrSumQueryService should throw exception with null connection")
     void testQueryService_NullConnection() {
         assertThrows(IllegalArgumentException.class, () -> {
-            new DrSumMcpServer.DrSumQueryService(null);
+            new DrSumQueryService(null);
         });
     }
 
     @Test
     @DisplayName("DrSumQueryService should throw exception when not connected")
     void testQueryService_NotConnected() {
-        DrSumMcpServer.DrSumQueryService service = 
-            new DrSumMcpServer.DrSumQueryService(connection);
+        DrSumQueryService service = 
+            new DrSumQueryService(connection);
         
         assertThrows(IllegalStateException.class, () -> {
             service.executeQuery("SELECT * FROM test");
@@ -294,8 +300,8 @@ class DrSumMcpServerTest {
     @Test
     @DisplayName("DrSumQueryService should throw exception for null SQL")
     void testQueryService_NullSQL() {
-        DrSumMcpServer.DrSumQueryService service = 
-            new DrSumMcpServer.DrSumQueryService(connection);
+        DrSumQueryService service = 
+            new DrSumQueryService(connection);
         
         assertThrows(IllegalArgumentException.class, () -> {
             service.executeQuery(null);
@@ -305,8 +311,8 @@ class DrSumMcpServerTest {
     @Test
     @DisplayName("DrSumQueryService should throw exception for empty SQL")
     void testQueryService_EmptySQL() {
-        DrSumMcpServer.DrSumQueryService service = 
-            new DrSumMcpServer.DrSumQueryService(connection);
+        DrSumQueryService service = 
+            new DrSumQueryService(connection);
         
         assertThrows(IllegalArgumentException.class, () -> {
             service.executeQuery("");
